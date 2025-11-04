@@ -1,0 +1,14 @@
+{
+  "domain": "mysair",
+  "name": "MySair Air Conditioner",
+  "version": "0.1.0",
+  "requirements": [
+    "paho-mqtt>=1.6.1",
+    "aiohttp>=3.9.0"
+  ],
+  "codeowners": ["@jclgranados"],
+  "config_flow": true,
+  "iot_class": "cloud_push",
+  "loggers": ["custom_components.mysair"]
+}
+
