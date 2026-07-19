@@ -1,12 +1,11 @@
 import asyncio
-import json
 import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 
 from .api import MySairAPI
 from .mqtt_handler import MySairMQTTClient
+from .status_parser import parse_status_payload
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -16,11 +15,6 @@ PLATFORMS = ["climate", "sensor", "switch"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Configura la integración MySair."""
-    loop = asyncio.get_running_loop()
-
-    # Asegurar que paho.mqtt se carga fuera del event loop
-    await loop.run_in_executor(None, lambda: __import__("paho.mqtt.client"))
-
     email = entry.data.get("email")
     password = entry.data.get("password")
 
@@ -73,56 +67,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
             # Si el mensaje es de tipo "status", lo parseamos
             if topic.endswith("/status"):
-                try:
-                    ctl_ref = payload.get("ctl")
-                    raw_value = payload.get("value", "")
-                    parsed_value = {}
-                    if isinstance(raw_value, str):
-                        try:
-                            # Limpieza: eliminar punto y coma o basura final
-                            cleaned = raw_value.strip()
-                            if cleaned.endswith(";"):
-                                cleaned = cleaned[:-1]
-                            # Cargar JSON válido
-                            parsed_value = json.loads(cleaned)
-                        except Exception as e:
-                            _LOGGER.warning(f"[MySair MQTT] ⚠️ Error decodificando JSON anidado: {e} -> {raw_value[:120]}...")
-                            parsed_value = {}
-                    else:
-                        parsed_value = raw_value
-#                    parsed_value = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
-
-                    thermostats = parsed_value.get("t", [])
-                    zone_states = []
-
-                    for t in thermostats:
-                        zone_states.append({
-                            "ctl": ctl_ref,
-                            "zone_id": t.get("rf"),
-                            "zone_name": t.get("n"),
-                            "temp_actual": float(t.get("tr", 0.0)),
-                            "temp_target": float(t.get("tc", 0.0)),
-                            "temp_min": float(t.get("tmm", 0.0)),
-                            "temp_max": float(t.get("tmx", 0.0)),
-                            "mode": int(t.get("e", 0)),  # 0=off, 1=heat, 2=cool
-                        })
-
-                    parsed_data = {
-                        "ctl": ctl_ref,
-                        "zones": zone_states
-                    }
-
-                    # Enviar evento con datos parseados
-                    hass.loop.call_soon_threadsafe(
-                        hass.bus.async_fire,
-                        f"{DOMAIN}_update",
-                        {"topic": topic, "data": parsed_data},
-                    )
-
-                    _LOGGER.debug(f"[MySair MQTT] 🧩 Estado parseado: {parsed_data}")
-
-                except Exception as e:
-                    _LOGGER.warning(f"[MySair MQTT] ⚠️ Error al parsear mensaje de estado: {e}")
+                parsed_data = parse_status_payload(payload)
+                hass.loop.call_soon_threadsafe(
+                    hass.bus.async_fire,
+                    f"{DOMAIN}_update",
+                    {"topic": topic, "data": parsed_data},
+                )
+                _LOGGER.debug(f"[MySair MQTT] 🧩 Estado parseado: {parsed_data}")
 
             else:
                 # Otros mensajes (no status)
@@ -149,7 +100,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     # --- REFRESCO AUTOMÁTICO DE STATUS ---
     async def refresh_status_periodic():
-        """Envía cada 5 minutos una instrucción 'status' a todas las instalaciones."""
+        """Cada 2 minutos solicita un 'status' de respaldo a todas las instalaciones.
+
+        El estado en tiempo real llega por MQTT; este POST solo fuerza un sync
+        periódico por si se pierde algún mensaje.
+        """
         while True:
             try:
                 for ref in installation_refs:
@@ -165,25 +120,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     _LOGGER.debug(f"[MySair] 🔁 Solicitud de estado enviada a instalación {ref}")
             except Exception as e:
                 _LOGGER.warning(f"[MySair] ⚠️ Error al enviar instrucción de estado: {e}")
-            await asyncio.sleep(60)  # 5 minutos
+            await asyncio.sleep(120)  # 2 minutos
 
-    # Lanzar la tarea periódica
-    hass.loop.create_task(refresh_status_periodic())
+    # Lanzar la tarea periódica ligada al ciclo de vida de la entrada:
+    # Home Assistant la cancela automáticamente durante el unload.
+    entry.async_create_background_task(
+        hass, refresh_status_periodic(), name="mysair_status_refresh"
+    )
 
-    # --- FINALIZADOR LIMPIO ---
-    async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
-        _LOGGER.info("[MySair] 🔌 Deteniendo integración y cerrando sesiones...")
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Descarga la integración MySair y libera recursos (MQTT, tareas, estado).
+
+    Orden de cierre: primero se descargan las plataformas (las entidades quitan
+    sus listeners del bus), después se detiene el cliente MQTT y por último se
+    limpia el estado en memoria. La tarea periódica se cancela sola por estar
+    creada con entry.async_create_background_task.
+    """
+    _LOGGER.info("[MySair] 🔌 Deteniendo integración y cerrando sesiones...")
+
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id, None)
         if data:
             mqtt_client = data.get("mqtt")
             if mqtt_client:
                 await hass.async_add_executor_job(mqtt_client.stop)
-            api = data.get("api")
-            if api:
-                await hass.async_add_executor_job(getattr, api, "close", lambda: None)
-        await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-        return True
 
-    entry.async_on_unload(entry.add_update_listener(async_unload_entry))
-    return True
+    return unload_ok
 
