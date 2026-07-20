@@ -27,7 +27,8 @@ contenedor aislado; el código se monta como volumen, así que no hay que
 reconstruir la imagen al editar tests o código.
 
 > ⚠️ **Techo de versión conocido:** PyPI no publica `homeassistant` más allá de
-> `2025.1.4` (más antiguo que el `2025.10.0` mínimo declarado en
+> `2025.1.4` (más antiguo que el `2025.10.0` mínimo documentado en el README —
+> `hassfest` no permite declarar la clave `homeassistant` en el
 > `manifest.json`); `pytest-homeassistant-custom-component` fija esa versión
 > internamente. Las APIs que usamos (`ConfigEntryAuthFailed`,
 > `_get_reauth_entry`, `async_update_reload_and_abort`, `async_set_unique_id`)

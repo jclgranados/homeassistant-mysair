@@ -13,7 +13,6 @@
     "requests>=2.31.0",
     "websocket-client==1.8.0"
   ],
-  "loggers": ["mysair"],
-  "homeassistant": "2025.10.0"
+  "loggers": ["mysair"]
 }
 
