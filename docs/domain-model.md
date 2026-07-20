@@ -104,42 +104,55 @@ classDiagram
 
 ## 5. Representación de atributos dinámicos
 
-| Atributo dominio | Campo MQTT | Entidad/propiedad HA | Mapeo modo |
+| Atributo dominio | Campo MQTT | Entidad/propiedad HA | Mapeo |
 |---|---|---|---|
 | Temperatura actual | `tr` | `climate.current_temperature`, `MySairTempSensor` | — |
 | Consigna | `tc` | `climate.target_temperature`, `MySairSetpointSensor` | — |
 | Rango temp | `tmm`/`tmx` | (parseados pero **no** aplicados; climate usa 10–30 fijos) | — |
-| Modo/estado | `e` | `climate.hvac_mode/hvac_action`, `MySairModeSensor`, `switch.is_on` | `0→OFF/IDLE`, `1→HEAT/HEATING`, `2→COOL/COOLING` |
+| Encendido | `e` | `climate.hvac_mode==OFF`, `switch.is_on`, `MySairModeSensor` | `"0"→off`, `"1"→on`, `"2"→standby (IDLE)` |
+| Calor/frío | `m` (paridad) | `climate.hvac_mode/action`, `MySairModeSensor` | par→HEAT/HEATING, impar→COOL/COOLING |
+| Humedad | `hm` | (parseada, aún sin entidad) | — |
+| Capacidades | `c`/`f`/`v`/`s` | (parseadas, aún sin uso) | permite calor/frío/fan/suelo |
 
-> **Confirmado:** `tmm`/`tmx` se parsean (`__init__.py:105-106`) pero **no** se usan para fijar `min_temp`/`max_temp` de la entidad climate (que están fijos a 10/30 en `climate.py:43-44`). Campos leídos-e-ignorados.
+> ✅ **Corregido (A5):** `e` es el **encendido** (no el modo) y el modo real es `m`. `status_parser.parse_status_payload` deriva `is_on`/`is_standby` de `e` y `is_heat`/`is_cool`/`is_ac`/`is_floor` de `m`. Ver `docs/protocol-findings.md`.
+> **Pendiente:** `tmm`/`tmx` se parsean pero **no** fijan `min_temp`/`max_temp` de climate (fijos 10/30 en `climate.py`). `hm` y capacidades se parsean pero aún no tienen entidad (oportunidad).
 
 ---
 
-## 6. Conceptos ausentes o no modelados
+## 6. Conceptos ahora modelables (confirmados en el protocolo, aún sin entidad)
+
+| Concepto | Campo | Estado en la integración |
+|---|---|---|
+| Suelo radiante vs AC | `m` ({2,3,4,5}=suelo) + capacidad `s` | Parseado (`is_floor`/`allow_floor`); sin entidad dedicada |
+| Velocidad del ventilador | `vv` + capacidad `v` + comando `fanspeed` | Parseado (`fan_mode`/`allow_fan`); sin entidad |
+| Humedad | `hm` | Parseada (`humidity`); sin sensor |
+| Temporizador | `tzv` + capacidad `tz` + comando `temporizer` | No implementado |
+| Standby | `e=="2"` | ✅ Mapeado a `HVACAction.IDLE` |
+| Programas / escenas | capacidad `hp` + comando `programs` | No implementado |
+
+## 6b. Conceptos aún ausentes o no confirmados
 
 | Concepto | Estado | Nota |
 |---|---|---|
-| Velocidad del ventilador | **Desconocido** | No aparece en el código. |
-| Apertura de compuerta (damper) | **Desconocido** | No modelado; podría estar en campos MQTT no leídos. |
-| Modo `auto` | Parcial | `const.HVAC_MODES` incluye `auto` pero climate no lo soporta. Inconsistente. |
-| Online/offline por zona | **Desconocido** | No hay `available` real; las entidades no reportan disponibilidad. |
+| Modo `auto` | Parcial | `const.HVAC_MODES` incluye `auto` pero climate no lo soporta. |
+| Online/offline por zona | **Desconocido** | Sin `available`; existe `isOutService` en la app (sin confirmar campo). |
 | Errores del dispositivo | **Desconocido** | No modelados. |
-| Escenas / programación horaria | **Desconocido** | No aparecen. |
-| Controlador como device | No modelado | `via_device` apunta a un device inexistente. |
+| Controlador como device | No modelado | `via_device` apuntaba a un device inexistente (select.py eliminado). |
 
 ---
 
-## 7. Campos cuyo significado NO está confirmado
+## 7. Campos: estado de confirmación
 
-| Campo | Contexto | Interpretación asumida | Certeza |
-|---|---|---|---|
-| `e` (status) | `t[]` | 0=off, 1=heat, 2=cool | Inferido (mapeo del código), semántica real Desconocida |
-| `m` (status) | `select.py` | 1=calor, else frío | Hipótesis, contradice `e` |
-| `tmm`/`tmx` | `t[]` | min/max temp | Inferido |
-| `tr` vs `tc` | `t[]` | actual vs consigna | Inferido (por nombres de variable) |
-| `value` string con `;` final | status | JSON serializado con terminador | Confirmado el tratamiento, no el porqué |
-| `app` (`web0077`/`aws_mqtt_user`) | instrucción | identificador de cliente emisor | Inferido |
-| `validated=1` | query installations | filtro de instalaciones validadas | Inferido |
-| Campos de `device`/`location`/`installation` distintos de los leídos | HTTP | — | Desconocido |
+| Campo | Significado | Certeza |
+|---|---|---|
+| `e` (status) | encendido: 0=off, 1=on, 2=standby | ✅ Confirmado (app oficial) |
+| `m` (status) | modo 0-5: par=calor, impar=frío; {0,1,4,5}=AC, {2,3,4,5}=suelo | ✅ Confirmado |
+| `tr`/`tc`/`tmm`/`tmx`/`hm` | temp actual/consigna/min/max/humedad | ✅ Confirmado |
+| `vv`/`tzv`/`sv` | fan / temporizador / suelo (valores actuales) | ✅ Confirmado |
+| `c`/`f`/`v`/`s`/`tz`/`hp`/`pl` | capacidades (calor/frío/fan/suelo/timer/programas/principal) | ✅ Confirmado |
+| `value` string con `;` final | JSON serializado con terminador (`slice(0,-1)` en la app) | ✅ Confirmado |
+| `app` (`web0077`/`aws_mqtt_user`) | `session.getClientId()` del emisor | ✅ Confirmado |
+| `validated=1` | filtro de instalaciones validadas | Inferido |
+| Campos de `location`/`installation` distintos de los leídos | — | Desconocido |
 
-Ver `docs/known-unknowns.md` para el plan de validación de cada uno.
+Ver `docs/protocol-findings.md` (fuente) y `docs/known-unknowns.md` (incógnitas restantes).

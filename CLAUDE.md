@@ -183,12 +183,17 @@ Los tests y la documentación están en la raíz del repo.
 
 ---
 
-## 11. Bugs conocidos de alto impacto (contexto rápido)
+## 11. Estado de bugs conocidos
 
-- 🔴 **Unload roto:** `async_unload_entry` es una función anidada registrada con `add_update_listener` (`__init__.py:174-187`) → recursos huérfanos al recargar.
-- 🔴 **Tarea periódica huérfana** y con intervalo 60 s pese al comentario "5 minutos" (`__init__.py:168-171`).
-- 🔴 **`select.py` no cargado y con bugs** (`await` sobre método síncrono, `aws_data` inexistente).
-- 🔴 **`switch.async_turn_on` enciende en modo "frío"** siempre (`switch.py:64`).
-- 🟠 **Reconexión MQTT reutiliza credenciales/firma caducadas** (`mqtt_handler.py:110`).
-- 🟠 **`requirements` con libs no usadas** (aiohttp/paho-mqtt/boto3).
-- 🟠 **`password` en claro** en la config entry (`config_flow.py:50`).
+Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
+- ✅ **Unload:** `async_unload_entry` a nivel de módulo con cierre limpio.
+- ✅ **Tarea periódica:** cancelable (`async_create_background_task`), intervalo 120 s.
+- ✅ **`select.py`:** eliminado.
+- ✅ **Codificación de estado:** `e`=encendido, modo=paridad de `m` (antes se leía `e` como modo). Ver `docs/protocol-findings.md`.
+- ✅ **`switch.turn_on`:** ya no fuerza frío; enciende con `mode` preservando el último modo (por defecto calor).
+- ✅ **`requirements`:** solo `requests` + `websocket-client`.
+
+Pendientes (requieren validación, ver `docs/known-unknowns.md`):
+- 🟠 **Reconexión MQTT reutiliza credenciales/firma caducadas** (`mqtt_handler.py`, refresca solo si `aws_credentials` es falsy) — #22.
+- 🟠 **`password` en claro** en la config entry (`config_flow.py`) — A6.
+- 🟠 **`client_id` compartido** con la app oficial → posibles expulsiones — #20.

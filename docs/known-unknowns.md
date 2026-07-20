@@ -5,14 +5,19 @@
 
 ---
 
-## 1. Codificación de modo (la incógnita más importante)
+## 1. Codificación de modo — ✅ RESUELTO (fuente: app oficial `app.09acea34.js`)
 
-| # | Pregunta | Contexto / evidencia | Hipótesis | Cómo validar | Riesgo si se asume mal |
-|---|---|---|---|---|---|
-| 1 | ¿Cuál es la codificación real del **comando** `mode`? | `api.py:256-257`: comentario dice `0`=calor, `1`=frío. `switch.py:64` usa `1` para "encender". | El comando usa 0=calor,1=frío | Enviar comando a una zona real y observar el `status` resultante | 🔴 Alto: encender pone la zona en el modo equivocado |
-| 2 | ¿Qué significa `e` en el **status**? | `__init__.py:107`: mapeo del código 0=off,1=heat,2=cool | 0=off,1=heat,2=cool | Comparar `e` con el estado físico de la zona | 🔴 Alto: HVAC mode/action erróneos |
-| 3 | ¿Por qué `select.py` usa `m` (1=calor) en vez de `e`? | `select.py:78-80` | `m` es un campo distinto o `select.py` está simplemente mal | Inspeccionar un payload real completo | 🟡 Medio (código muerto hoy) |
-| 4 | ¿La asimetría comando(0/1) ↔ status(0/1/2) es real o un bug? | Tres codificaciones coexisten | El backend traduce entre ambas | Prueba controlada comando→status | 🔴 Alto |
+Análisis del bundle de la app web MySair (clases de modelo `te`/`ie` y mixin de instrucciones).
+Ver `docs/protocol-findings.md` para el detalle con las citas del JS.
+
+| # | Pregunta | Respuesta CONFIRMADA |
+|---|---|---|
+| 1 | Codificación del **comando** `mode` | `value = {mode:"0".."5", temperature:"<tc>"}`. `m` base: 0=AC, 2=Suelo, 4=AC+Suelo; **+1 si frío**. Par=calor, impar=frío. Para solo-aire: **0=calor, 1=frío** → nuestro comando ya es correcto. |
+| 2 | ¿Qué significa `e` en el **status**? | `e` NO es el modo: es el **encendido**. `"0"`=off, `"1"`=on, `"2"`=standby (`isOn()=="0"!=e`, `isStanby()=="2"==e`). |
+| 3 | ¿Por qué `select.py` usaba `m`? | Tenía razón en el campo: el modo real es `m` (0-5), no `e`. El resto de `select.py` estaba roto (ya eliminado). |
+| 4 | ¿Asimetría comando(0/1) ↔ status? | No hay asimetría real: el comando manda `m` y el status devuelve `m`. La confusión venía de que nuestro parser leía `e` (encendido) como si fuera el modo. |
+
+**Corrección pendiente en el código (A5):** el parser de estado debe leer **on/off de `e`** y **calor/frío de la paridad de `m`**, no interpretar `e` como modo. `switch.turn_on` no debe encender con `mode:"1"` (fuerza frío).
 
 ---
 

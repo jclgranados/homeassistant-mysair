@@ -126,16 +126,20 @@
 ]
 ```
 
-**Variantes de `value` por `command` (Confirmado):**
+**Catálogo completo de comandos (CONFIRMADO desde la app oficial — ver `docs/protocol-findings.md`):**
 
-| `command` | `value` | Semántica según código | Origen |
+| `command` | `value` | Semántica | Implementado |
 |---|---|---|---|
-| `mode` | `{"mode":"0"\|"1","temperature":"<temp>"}` | `0`=calor, `1`=frío (comentario `api.py:256-257`) | `api.py:258` |
-| `temp` | `"<temperatura>"` (string) | cambio de consigna | `api.py:261` |
-| `power` | `"0"` | apagar | `api.py:264` |
-| `status` | `"sync"` (con `device:""`) | solicitar estado | `__init__.py:161-162` |
+| `mode` | `{"mode":"0".."5","temperature":"<tc>"}` | **Encender / fijar modo.** `m`: par=calor, impar=frío; {0,1,4,5}=AC, {2,3,4,5}=suelo | ✅ (solo `0`/`1`, AC) |
+| `power` | `"0"` | **Apagar** (no existe `power:"1"`; encender se hace con `mode`) | ✅ |
+| `temp` | `"<temperatura>"` (string) | Cambio de consigna | ✅ |
+| `status` | `"sync"` (con `device:""`) | Solicitar estado | ✅ |
+| `fanspeed` | `"<n>"` (string) | Velocidad de ventilador | ❌ (oportunidad) |
+| `temporizer` | `<timer>` | Temporizador | ❌ (oportunidad) |
+| `stop` | `"1"` | Parar instalación | ❌ |
+| `programs` | `""` | Leer programas | ❌ |
 
-> ⚠️ **Inconsistencia confirmada:** la codificación de modo en el **comando** (`0=calor, 1=frío`) **no coincide** con la del **estado MQTT** (`e: 1=heat, 2=cool`). Ver `docs/known-unknowns.md`. Además `switch.async_turn_on` envía `mode="1"` (¡frío!) para "encender" (`switch.py:64`).
+> ✅ **Resuelto:** la codificación de modo del **comando** (`0`=calor, `1`=frío para AC) **es correcta** en la integración. La antigua "inconsistencia" venía de que el parser de estado leía `e` (encendido) como si fuera el modo; corregido en `status_parser.py` (usa `e` para on/off y la paridad de `m` para calor/frío). `switch.turn_on` ya no fuerza frío: enciende con `mode` preservando el último modo (por defecto calor). Ver `docs/protocol-findings.md §7`.
 
 - **Respuesta esperada (201):**
   ```json
@@ -147,7 +151,7 @@
   - Cualquier otro `!=201` → `Exception("Instruction error: ...")`.
   - `msg != "Creado"` o `error` no vacío → `Exception("Instruction rejected: ...")`.
 - **Timeout:** 10 s. **Reintentos:** 1 (solo 401).
-- **Usado por:** `send_zone_command` (climate/switch), `refresh_status_periodic`, y (roto) `select.async_select_option`.
+- **Usado por:** `send_zone_command` (climate/switch) y `refresh_status_periodic`.
 
 **Ejemplo sanitizado — poner zona en calor a 21°:**
 ```json

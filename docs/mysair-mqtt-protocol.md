@@ -92,35 +92,45 @@ El callback (`__init__.py:74-122`) espera un JSON con:
 - `value` es un **string** que contiene JSON anidado; se limpia un `;` final antes de `json.loads` (`__init__.py:83-87`).
 - El JSON anidado contiene `t` = lista de termostatos/zonas.
 
-**Campos por zona en `t[]` (Confirmado que se leen — semántica Inferida):**
+**Campos por zona en `t[]` (semántica CONFIRMADA desde la app oficial — ver `docs/protocol-findings.md`):**
 
-| Campo | Interpretación en el código | Tipo | Certeza |
+| Campo | Significado | Valores | Certeza |
 |---|---|---|---|
-| `rf` | id/referencia de zona (`zone_id`) | str | Confirmado se usa; nombre Inferido |
-| `n` | nombre de zona | str | Inferido |
-| `tr` | temperatura real/actual (`temp_actual`) | float | Inferido |
-| `tc` | temperatura consigna (`temp_target`) | float | Inferido |
-| `tmm` | temperatura mínima (`temp_min`) | float | Inferido |
-| `tmx` | temperatura máxima (`temp_max`) | float | Inferido |
-| `e` | modo/estado: `0`=off, `1`=heat, `2`=cool | int | Confirmado el mapeo en código; semántica real Desconocida |
-| `m` | (usado solo en `select.py`, código roto) modo `1`=calor | ? | Hipótesis / contradice `e` |
+| `rf` | referencia de zona (`zone_id`) | str | Confirmado |
+| `n` | nombre de zona | str | Confirmado |
+| `e` | **ENCENDIDO** (no es el modo) | `"0"`=off, `"1"`=on, `"2"`=standby | ✅ Confirmado |
+| `m` | **MODO** | `0`-`5`: par=calor, impar=frío; {0,1,4,5}=AC, {2,3,4,5}=suelo | ✅ Confirmado |
+| `tr` | temperatura real/actual (`temp_actual`) | num | Confirmado |
+| `tc` | temperatura consigna (`temp_target`) | num | Confirmado |
+| `tmm` / `tmx` | temperatura mín / máx | num | Confirmado |
+| `hm` | humedad | num | Confirmado |
+| `vv` | modo/velocidad de ventilador actual | str | Confirmado |
+| `tzv` | valor de temporizador actual | str | Confirmado |
+| `sv` | estado de suelo actual | str | Confirmado |
+| `c` / `f` | capacidad: permite calor / frío | `"1"`/`"0"` | Confirmado |
+| `v` / `s` | capacidad: permite ventilador / suelo | `"1"`/`"0"` | Confirmado |
+| `tz` / `hp` | capacidad: permite temporizador / programas | `"1"`/`"0"` | Confirmado |
+| `pl` | zona principal | flag | Confirmado |
 
-> ⚠️ **Contradicción no resuelta:** `select.py:78` lee `thermostat["m"]` con `1`=Calor, mientras el callback principal usa `e` con `1`=heat, `2`=cool. Y los **comandos** usan `0`=calor,`1`=frío. Tres codificaciones distintas. Ver `docs/known-unknowns.md`.
+> ✅ **Resuelto** (antes marcado como contradicción): `e` es el estado de encendido, **no** el modo. El modo real es `m` (0-5). La app deriva calor/frío de la **paridad de `m`** y AC/suelo de los conjuntos indicados. Ver tabla de `m` en `docs/protocol-findings.md §4`.
 
 ### 4.3 Ejemplo sanitizado de payload `status`
 Mensaje crudo aproximado en el WebSocket (**Inferido**, valores ficticios):
 ```
-(pro/v1/get/ctl/INST_REF/status){"ctl":"INST_REF","value":"{\"t\":[{\"rf\":\"DEV1\",\"n\":\"Salon\",\"tr\":22.5,\"tc\":21.0,\"tmm\":10.0,\"tmx\":30.0,\"e\":1}]};"}
+(pro/v1/get/ctl/INST_REF/status){"ctl":"INST_REF","value":"{\"t\":[{\"rf\":\"DEV1\",\"n\":\"Salon\",\"e\":\"1\",\"m\":\"0\",\"tr\":22.5,\"tc\":21.0,\"tmm\":10.0,\"tmx\":30.0,\"hm\":45}]};"}
 ```
-JSON anidado ya parseado:
+JSON anidado ya parseado (zona encendida, AC en calor):
 ```json
-{ "t": [ { "rf":"DEV1", "n":"Salon", "tr":22.5, "tc":21.0, "tmm":10.0, "tmx":30.0, "e":1 } ] }
+{ "t": [ { "rf":"DEV1", "n":"Salon", "e":"1", "m":"0", "tr":22.5, "tc":21.0, "tmm":10.0, "tmx":30.0, "hm":45 } ] }
 ```
-Estructura normalizada que se emite al event bus como `mysair_update.data` (**Confirmado** — `__init__.py:110-113`):
+Estructura normalizada que emite `parse_status_payload` al event bus como `mysair_update.data` (**Confirmado** — `status_parser.py`):
 ```json
 { "ctl":"INST_REF",
   "zones":[ { "ctl":"INST_REF","zone_id":"DEV1","zone_name":"Salon",
-              "temp_actual":22.5,"temp_target":21.0,"temp_min":10.0,"temp_max":30.0,"mode":1 } ] }
+              "temp_actual":22.5,"temp_target":21.0,"temp_min":10.0,"temp_max":30.0,"humidity":45.0,
+              "power":"1","is_on":true,"is_standby":false,
+              "mode_raw":"0","is_heat":true,"is_cool":false,"is_ac":true,"is_floor":false,
+              "fan_mode":null,"allow_heat":false,"allow_cool":false,"allow_fan":false,"allow_floor":false } ] }
 ```
 
 ### 4.4 Mensajes no-status
