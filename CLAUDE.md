@@ -55,7 +55,7 @@ pytest                      # ~89 tests: parser, builders MQTT, firma SigV4, cli
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 139 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode)
+docker compose run --rm test-ha    # 151 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT)
 
 # Lint / formato (recomendado: ruff; aún no configurado en el repo)
 ruff check custom_components/mysair tests
@@ -231,6 +231,7 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **`datetime.utcnow()` obsoleto** (C6, en la firma SigV4), **`FlowResult`→`ConfigFlowResult`** (C7), y **`should_poll=False` + `available` por frescura de MQTT** (C5, todas las entidades no disponibles hasta el primer status y de nuevo si no llega nada en 360 s). Ver `docs/execution-plan.md` Tarea 17.
 - ✅ **Velocidad de ventilador** (F2): `climate.fan_mode`/`fan_modes`, comando `fanspeed`. Mapeo de `vv` confirmado en el JS (#24 resuelto — cuidado, una página de demo/storybook del mismo bundle tenía datos de ejemplo que parecían una pista pero no lo eran). Ver `docs/execution-plan.md` Tarea 18.
 - ✅ **Dos bugs reales encontrados con una captura de producción** (2026-07-20, tras probar la Tarea 18): `mqtt_handler._on_message` clasificaba como `"unknown"` cualquier topic que no viniera envuelto en paréntesis — el topic de `feedback` llega sin ellos, así que la confirmación de comandos (Tarea 16) **nunca funcionó** pese a que el ACK sí llegaba. Y `status_parser` leía el campo de humedad como `hm` cuando el real es `hum` — el sensor de humedad (F1) **nunca mostró nada**. Ambos corregidos; #6 y #23 quedan resueltos de paso. Ver `docs/execution-plan.md` Tarea 19.
+- ✅ **Causa raíz de las desconexiones MQTT "sistemáticas"** (2026-07-20): nunca refrescábamos la sesión MQTT *antes* de que caducaran las credenciales AWS, solo al reconectar después de que AWS ya la hubiera cortado — de ahí el patrón regular. Corregido con refresco proactivo (`api.seconds_until_aws_credentials_expire` + timer en `mqtt_handler`), igual que hace la app oficial. Además, el aviso de "sin confirmación MQTT" ahora distingue si fue por desconexión o con MQTT activo. Pendiente de que el usuario confirme en producción que las caídas desaparecen. Ver `docs/execution-plan.md` Tarea 20.
 
 Pendientes:
 - 🟡 **Parser de frame MQTT robusto** (#6): decodificar la cabecera MQTT real (longitud de topic, packet id) en vez de heurísticas de texto — sigue pendiente aunque el bug concreto del topic ya se corrigió.

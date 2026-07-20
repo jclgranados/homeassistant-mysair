@@ -26,6 +26,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     """Configura los termostatos MySair."""
     data = hass.data[DOMAIN][entry.entry_id]
     api = data["api"]
+    mqtt_client = data["mqtt"]
     devices = data["devices"]
 
     entities = []
@@ -33,7 +34,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         for dev in device_list:
             dev_id = dev.get("reference") or dev.get("rf") or dev.get("id")
             name = dev.get("name", f"Termostato {dev_id}")
-            entities.append(MySairThermostat(hass, api, inst_ref, dev_id, name))
+            entities.append(MySairThermostat(hass, api, mqtt_client, inst_ref, dev_id, name))
 
     async_add_entities(entities)
     _LOGGER.info(f"[MySair Climate] ✅ {len(entities)} termostatos creados.")
@@ -50,9 +51,10 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
     )
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
 
-    def __init__(self, hass, api, inst_ref, device_id, name):
+    def __init__(self, hass, api, mqtt_client, inst_ref, device_id, name):
         self.hass = hass
         self.api = api
+        self.mqtt_client = mqtt_client
         self.inst_ref = inst_ref
         self.device_id = device_id
         self._attr_unique_id = f"mysair_{inst_ref}_{device_id}"

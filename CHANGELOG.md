@@ -6,6 +6,12 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.4.2] - 2026-07-20
+
+### Fixed
+- Causa raíz de las desconexiones MQTT periódicas: la sesión nunca se refrescaba antes de que caducaran las credenciales AWS, así que AWS IoT cortaba la conexión activa cada vez que expiraban (patrón regular/"sistemático"). Ahora la conexión se refresca proactivamente antes de que eso ocurra, igual que hace la app oficial.
+- El aviso "Sin confirmación MQTT" ahora indica explícitamente si fue porque el MQTT estaba desconectado en ese momento o porque no llegó el ACK con la conexión activa.
+
 ## [2.4.1] - 2026-07-20
 
 ### Fixed
