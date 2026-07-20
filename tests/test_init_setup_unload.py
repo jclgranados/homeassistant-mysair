@@ -10,9 +10,10 @@ import pytest
 pytest.importorskip("homeassistant")
 
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.mysair.const import DOMAIN
+from custom_components.mysair.const import DOMAIN, SERVICE_STOP_INSTALLATION
 from custom_components.mysair.api import MySairAPI, MySairAuthError, MySairConnectionError
 from custom_components.mysair.mqtt_handler import MySairMQTTClient
 
@@ -152,3 +153,57 @@ async def test_unload_entry_cleans_up(hass, monkeypatch):
     assert entry.state is ConfigEntryState.NOT_LOADED
     assert entry.entry_id not in hass.data.get(DOMAIN, {})
     assert stop_calls == [True]
+
+
+# --- SERVICIO mysair.stop_installation (F5) ---
+
+async def test_stop_installation_service_calls_api(hass, monkeypatch):
+    _patch_happy_api(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        MySairAPI,
+        "send_installation_command",
+        lambda self, ctl, command_type: calls.append((ctl, command_type)),
+    )
+
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    calls.clear()  # descarta la llamada "status" del refresco periódico (__init__.py)
+
+    assert hass.services.has_service(DOMAIN, SERVICE_STOP_INSTALLATION)
+    await hass.services.async_call(
+        DOMAIN, SERVICE_STOP_INSTALLATION, {"installation_ref": "INST_A"}, blocking=True
+    )
+
+    assert calls == [("INST_A", "stop")]
+
+
+async def test_stop_installation_service_unknown_installation_raises(hass, monkeypatch):
+    _patch_happy_api(monkeypatch)
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, SERVICE_STOP_INSTALLATION, {"installation_ref": "NO_EXISTE"}, blocking=True
+        )
+
+
+async def test_stop_installation_service_removed_after_last_unload(hass, monkeypatch):
+    _patch_happy_api(monkeypatch)
+    monkeypatch.setattr(MySairMQTTClient, "stop", lambda self: None)
+
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.services.has_service(DOMAIN, SERVICE_STOP_INSTALLATION)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert not hass.services.has_service(DOMAIN, SERVICE_STOP_INSTALLATION)

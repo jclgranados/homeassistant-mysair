@@ -42,13 +42,13 @@ Ver `docs/protocol-findings.md` para el detalle con las citas del JS.
 
 | # | Pregunta | Evidencia | Hipótesis | Cómo validar | Riesgo |
 |---|---|---|---|---|---|
-| 12 | ¿Qué campos tiene un `device` además de `reference`/`name`? | Fallbacks `rf`/`id` (`climate.py:25`) sugieren incertidumbre | Puede incluir tipo, capacidades, estado online | Inspeccionar respuesta `/devices` | 🟡 Medio |
-| 13 | ¿El campo correcto es `reference` o `rf`/`id`? | Fallback en cadena | `reference` | Ver respuesta real | 🟡 Medio |
-| 14 | ¿Qué hace `validated=1`? | Query fija (`api.py:161`) | Filtra instalaciones validadas | Probar con `validated=0` | 🟢 Bajo |
+| 12 | ¿Qué campos tiene un `device` además de `reference`/`name`? | Fallbacks `rf`/`id` (`climate.py:25`) sugieren incertidumbre | Puede incluir tipo, capacidades, estado online | 🟡 Reforzado (2026-07-20, sin cerrar): no hay dump crudo de `/devices`, pero producción real muestra las entidades emparejando correctamente cada actualización MQTT con su dispositivo, lo que implica que la cadena de fallback resuelve bien el campo. El JS (`updateDevice`/`deleteDevice`) usa consistentemente `e.reference`, nunca `rf`/`id` — esos alias parecen defensivos, no observados en el wire. Sigue sin descartarse que existan campos adicionales (tipo, capacidades) no usados hoy. | 🟡 Medio |
+| 13 | ¿El campo correcto es `reference` o `rf`/`id`? | Fallback en cadena | `reference` | 🟡 Reforzado (2026-07-20): mismo hallazgo que #12 — el JS de la app usa siempre `reference`, nunca `rf`/`id`, en las operaciones que identifican un device (`updateDevice`, `deleteDevice`). Sin una respuesta HTTP cruda que lo confirme al 100%, se mantiene el fallback en el código por prudencia. | 🟡 Medio |
+| 14 | ¿Qué hace `validated=1`? | Query fija (`api.py:161`) | Filtra instalaciones validadas | ✅ Resuelto (2026-07-20): la app llama `updateInstallation({...,validated:1,...})` tras el primer `status` recibido con éxito de una instalación — `validated` marca las instalaciones que ya han confirmado conectividad al menos una vez. El filtro `validated=1` en `get_installations` por tanto excluye instalaciones que nunca han llegado a conectarse (p.ej. recién dadas de alta y aún no emparejadas). | 🟢 Bajo |
 | 15 | ¿Puede una cuenta tener varias `Location`? El código usa solo la primera. | `__init__.py:39` | Sí; se pierden las demás | ✅ Validado en producción con cuenta real (2026-07-20): el flujo funciona correctamente con una `Location`. **Decisión de alcance:** se mantiene deliberadamente solo la primera `Location`; multi-location queda fuera de alcance salvo que un usuario lo necesite. | 🟢 Bajo (aceptado) |
 | 16 | Duración del `access_token` | ✅ Resuelto | El login trae `expires_at` (unix s). La app refresca con timer; nosotros solo ante 401. Oportunidad de refresco proactivo. |
 | 17 | ¿`command:"temp"` acepta `value` string? | ✅ Resuelto | String (`setTemp` envía `""+i`). |
-| 18 | ¿Endpoint HTTP para leer estado? | 🟢 Abierto | No observado; el estado llega por MQTT. |
+| 18 | ¿Endpoint HTTP para leer estado? | ✅ Resuelto (2026-07-20) | No existe. Confirmado en el bundle: la app usa el mismo patrón que nosotros — enviar `command:"status"` por HTTP (`POST /send/instruction`) y esperar la respuesta real por MQTT (`.../status`). No hay ningún endpoint GET que devuelva el estado directamente. |
 | 19 | ¿Rate limiting en `/send/instruction`? | 🟡 Abierto | Desconocido; `VUE_APP_OUTSERVICE_MILISECOND=5000` (timeout de la app, no rate limit). |
 
 ---
@@ -74,10 +74,11 @@ Ver `docs/protocol-findings.md` para el detalle con las citas del JS.
 
 ## 6. Resumen
 
-- ✅ **Resueltos desde el bundle oficial** (`docs/protocol-findings.md`): #1-5, #7-9, #11, #16-17, #20-22, #24.
+- ✅ **Resueltos desde el bundle oficial** (`docs/protocol-findings.md`): #1-5, #7-9, #11, #14, #16-18, #20-22, #24.
 - ✅ **Resueltos con captura real de producción (2026-07-20):** #23 (payload `feedback` plano), #25 (`hum`, no `hm`) y #6 (formato del frame PUBLISH, deducido por coincidencia de longitud de topic entre capturas — sin necesitar un hex dump).
-- 🟡 **Abiertos (menores / requieren captura real):** #10 (password MQTT), #12/#13 (campos HTTP de `/devices`), #14 (`validated`), #18/#19 (endpoints/rate limiting).
+- 🟡 **Abiertos (menores / requieren captura real):** #10 (password MQTT), #19 (rate limiting). #12/#13 (campos HTTP de `/devices`) reforzados con evidencia indirecta (2026-07-20) pero no cerrados del todo: no hay dump crudo de `/devices`, aunque el comportamiento en producción y el JS de la app apuntan consistentemente a `reference`.
 - 🟢 **Aceptados por decisión de alcance:** #15 (multi-location — fuera de alcance, validado en producción con una `Location`).
+- ⚫ **Investigado sin resultado (2026-07-20):** los campos `vf`, `hmh`, `mh`, `ps`, `p` observados en JSON de zona de producción real no aparecen en ninguna parte del bundle JS de la app — búsqueda exhaustiva sin coincidencias. Por la regla del proyecto de no inventar campos, quedan sin interpretar hasta encontrar evidencia (capturas adicionales, otra versión del bundle, o inspección de red con DevTools en un flujo que los muestre en uso).
 
 **Correcciones de código pendientes derivadas (ver roadmap):**
 - 🔴 `client_id` MQTT único (#20) · 🔴 refrescar credenciales con `aws_expires_at` (#22)

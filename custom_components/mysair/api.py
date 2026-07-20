@@ -396,6 +396,46 @@ class MySairAPI:
             _LOGGER.error(f"[MySairAPI] ❌ Error al enviar comando {command_type} para {device}: {e}")
             raise
 
+    def send_installation_command(self, ctl, command_type, value=None):
+        """Envía una instrucción a nivel de instalación completa (``device`` vacío).
+
+        command_type puede ser:
+            - "stop"   → detiene la instalación completa (value = "1", F5)
+            - "status" → solicita sincronización de estado (value = "sync")
+        """
+        try:
+            if not ctl:
+                raise ValueError("Falta el parámetro obligatorio 'ctl'.")
+
+            app_name = (
+                self.aws_credentials.get("aws_mqtt_user", "web0077")
+                if self.aws_credentials
+                else "web0077"
+            )
+
+            if command_type == "stop":
+                payload_value = "1"
+            elif command_type == "status":
+                payload_value = "sync"
+            else:
+                raise ValueError(f"Tipo de comando de instalación no soportado: {command_type}")
+
+            instruction = [{
+                "sender": "WEB",
+                "ctl": ctl,
+                "app": app_name,
+                "device": "",
+                "command": command_type,
+                "value": payload_value,
+            }]
+
+            _LOGGER.info(f"[MySairAPI] 🏠 Enviando comando de instalación '{command_type}' a {ctl} → {instruction}")
+            return self.send_instruction(instruction)
+
+        except Exception as e:
+            _LOGGER.error(f"[MySairAPI] ❌ Error al enviar comando de instalación {command_type} para {ctl}: {e}")
+            raise
+
     # ==========================================================
     # 🔏 FIRMAR URL AWS (WebSocket MQTT)
     # ==========================================================

@@ -18,6 +18,7 @@ from mqtt_handler import (
     build_status_topic,
     build_feedback_topic,
     build_mqtt_subscribe,
+    compute_backoff_delay,
     decode_varint,
     encode_varint,
     parse_mqtt_publish,
@@ -392,3 +393,46 @@ def test_on_credential_refresh_due_marks_planned_reconnect_and_closes_ws():
 
     assert client._planned_reconnect is True
     assert closed == [True]
+
+
+# --- compute_backoff_delay (E3) ---
+
+class _ZeroJitterRng:
+    """Doble de `random`: sin aleatoriedad, para comprobar el valor exacto del backoff."""
+
+    def uniform(self, a, b):
+        return 0.0
+
+
+def test_compute_backoff_delay_exponential_without_jitter():
+    rng = _ZeroJitterRng()
+    assert compute_backoff_delay(0, base=10, max_delay=120, rng=rng) == 10
+    assert compute_backoff_delay(1, base=10, max_delay=120, rng=rng) == 20
+    assert compute_backoff_delay(2, base=10, max_delay=120, rng=rng) == 40
+    assert compute_backoff_delay(3, base=10, max_delay=120, rng=rng) == 80
+
+
+def test_compute_backoff_delay_caps_at_max_delay():
+    rng = _ZeroJitterRng()
+    assert compute_backoff_delay(10, base=10, max_delay=120, rng=rng) == 120
+
+
+def test_compute_backoff_delay_applies_jitter_within_bounds():
+    for attempt in range(5):
+        delay = compute_backoff_delay(attempt, base=10, max_delay=120, jitter_fraction=0.2)
+        expected = min(10 * (2 ** attempt), 120)
+        assert expected * 0.8 <= delay <= expected * 1.2
+
+
+def test_compute_backoff_delay_never_negative():
+    delay = compute_backoff_delay(0, base=1, max_delay=120, jitter_fraction=5.0)
+    assert delay >= 0
+
+
+def test_reconnect_attempt_resets_on_connack():
+    client = _client_with_creds()
+    client._reconnect_attempt = 5
+
+    client._on_message(None, b"\x20\x02\x00\x00")
+
+    assert client._reconnect_attempt == 0
