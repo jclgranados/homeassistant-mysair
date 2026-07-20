@@ -88,6 +88,10 @@ Los tests y la documentación están en la raíz del repo.
 | `tests/` | Tests P0/P1 (no requieren HA) + `conftest.py` con fixtures sanitizadas |
 | `pytest.ini`, `requirements-test.txt` | Configuración y dependencias de test |
 | `docs/` | Documentación de arquitectura, protocolos, dominio, tests, seguridad |
+| `hacs.json` | Metadatos para instalar el repo como repositorio personalizado de HACS |
+| `README.md` | Instalación, configuración, entidades, limitaciones (cara pública del proyecto) |
+| `CHANGELOG.md` | Historial de versiones (Keep a Changelog + SemVer) |
+| `LICENSE` | MIT |
 
 > Nota: `select.py` fue **eliminado** en estabilización (código muerto/roto). Ver `docs/execution-plan.md`.
 

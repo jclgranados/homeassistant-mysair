@@ -86,11 +86,11 @@
 
 | # | Tarea | Prio |
 |---|---|---|
-| G1 | `hacs.json` + estructura `custom_components/mysair/` para instalación vía HACS. | 🟡 |
-| G2 | README completo: instalación, configuración, limitaciones, aviso de "no oficial". | 🟡 |
-| G3 | Versionado semántico y CHANGELOG. | 🟢 |
-| G4 | Ajustar/retirar `quality_scale` hasta cumplir requisitos. | 🟢 |
-| G5 | Ampliar `.gitignore` (`.env`, `*.har`, capturas). | 🟢 |
+| G1 | `hacs.json` + estructura `custom_components/mysair/` para instalación vía HACS. | ✅ Hecho |
+| G2 | README completo: instalación, configuración, limitaciones, aviso de "no oficial". | ✅ Hecho |
+| G3 | Versionado semántico y CHANGELOG. | ✅ Hecho |
+| G4 | Ajustar/retirar `quality_scale` hasta cumplir requisitos. | ✅ Hecho (retirado) |
+| G5 | Ampliar `.gitignore` (`.env`, `*.har`, capturas). | ✅ Hecho |
 
 ---
 

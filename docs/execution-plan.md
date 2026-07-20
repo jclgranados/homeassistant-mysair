@@ -17,6 +17,8 @@
 | 7 | Corregir codificación de modo/encendido (A5) | `status_parser.py`, `climate.py`, `sensor.py`, `switch.py` | 🔴 Crítica | ✅ Hecho (confirmado con app oficial) |
 | 8 | Robustez MQTT: client_id único, refresco creds, topic dinámico (#20/#22/#5) | `mqtt_handler.py`, `api.py` | 🔴 Crítica | ✅ Hecho (69 tests verdes) |
 | 9 | Modernización HA: `unique_id` (C2), password fuera de la config entry (A6), reauth flow (C3) | `config_flow.py`, `api.py`, `__init__.py` | 🟠 Alta | ✅ Hecho (78 tests verdes) |
+| 10 | Empaquetado: `hacs.json` (G1), README completo (G2), `LICENSE` (MIT) | `hacs.json`, `README.md`, `LICENSE` | 🟡 Media | ✅ Hecho |
+| 11 | Versionado + CHANGELOG (G3), retirar `quality_scale` no justificado (G4), ampliar `.gitignore` (G5) | `manifest.json`, `CHANGELOG.md`, `.gitignore` | 🟢 Baja | ✅ Hecho |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -74,6 +76,18 @@
 - Tests: 9 nuevos en `test_api.py` (excepciones tipadas, callback de rotación de tokens). 78 tests verdes.
 - **Limitación conocida:** `config_flow.py` y `__init__.py` (unique_id, reauth, `ConfigEntryAuthFailed`/`NotReady`) no tienen tests automatizados — requieren `pytest-homeassistant-custom-component` + Python ≥3.12, no disponibles en este entorno (ver `docs/testing-strategy.md`). Verificado manualmente en producción por el usuario (cuenta real, 2026-07-20) para el camino feliz (login inicial + arranque normal); el camino de reauth (refresh_token inválido) no se ha probado en producción todavía.
 
+### Tarea 10 — Empaquetado HACS y README (G1/G2)
+- `hacs.json` en la raíz (`name`, `render_readme`, `homeassistant` mínimo) — habilita añadir el repo como repositorio personalizado de tipo Integración en HACS. La estructura `custom_components/mysair/` ya cumplía el layout esperado (Tarea 6).
+- `README.md` reescrito: qué hace, entidades expuestas, instalación (HACS + manual), configuración (incluye la política de no guardar password tras A6), limitaciones conocidas (#15, #6, sin fan/auto), enlaces a `docs/` y `CLAUDE.md`, aviso de integración no oficial.
+- `LICENSE` (MIT) añadido — el repo no tenía licencia formal pese a que el README original decía "feel free to use and modify it".
+- **No incluido en esta tarea** (fuera de alcance, quedan en el roadmap): G3 (versionado semántico/CHANGELOG), G4 (revisar si `quality_scale: silver` en `manifest.json` está justificado), G5 (ampliar `.gitignore`).
+
+### Tarea 11 — Versionado, quality_scale, .gitignore (G3/G4/G5)
+- `CHANGELOG.md` (Keep a Changelog + SemVer): reconstruido desde `git log`, con `[2.0.0]` marcando el trabajo de estabilización/seguridad/empaquetado como cambio incompatible respecto a `1.0.0` (layout de instalación, corrección de `e`/`m`, password fuera de la config entry).
+- `manifest.json`: `version` `1.0.0` → `2.0.0`; `quality_scale: silver` **retirado** (no estaba justificado: sin cobertura de tests con harness de HA, sin traducciones/`strings.json` (C4), sin icono de marca en `home-assistant/brands`). Se puede reclamar un nivel real cuando se cumplan esos requisitos.
+- `.gitignore` ampliado: higiene de proyecto (`.DS_Store`, `.vscode/`, `.idea/`, `.ruff_cache`, `.coverage`, `dist/`, `build/`, `*.egg-info/`) y más patrones de capturas/dumps de protocolo (`*.pcap`, `*.pcapng`, `*.mitm`, `.env.*`, `scratchpad/`).
+
 ### Pendiente (no bloqueado, siguiente)
 - Features desde hallazgos: sensor de humedad (`hm`), ventilador (`fanspeed`/`vv`), disponibilidad heat/cool (`c`/`f`).
 - Robustez del parser de frame MQTT (#6, requiere dump real).
+- Traducciones/`strings.json` (C4) — desbloquearía poder reclamar `quality_scale` de nuevo.
