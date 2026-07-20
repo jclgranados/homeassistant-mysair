@@ -378,7 +378,7 @@ class MySairAPI:
         method = "GET"
         service = "iotdevicegateway"
         algorithm = "AWS4-HMAC-SHA256"
-        t = datetime.datetime.utcnow()
+        t = datetime.datetime.now(datetime.timezone.utc)
         amz_date = t.strftime("%Y%m%dT%H%M%SZ")
         date_stamp = t.strftime("%Y%m%d")
         credential_scope = f"{date_stamp}/{region}/{service}/aws4_request"

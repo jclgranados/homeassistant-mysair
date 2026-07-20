@@ -2,8 +2,8 @@ import logging
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResult
 
 from .const import DOMAIN
 from .api import MySairAPI, MySairAuthError, MySairConnectionError
@@ -25,7 +25,7 @@ class MySairConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(self, user_input=None) -> FlowResult:
+    async def async_step_user(self, user_input=None) -> ConfigFlowResult:
         """Primer paso del flujo de configuración (inicio de sesión)."""
         errors = {}
 
@@ -70,11 +70,11 @@ class MySairConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data) -> FlowResult:
+    async def async_step_reauth(self, entry_data) -> ConfigFlowResult:
         """Se dispara cuando la sesión guardada ya no es válida (ConfigEntryAuthFailed)."""
         return await self.async_step_reauth_confirm()
 
-    async def async_step_reauth_confirm(self, user_input=None) -> FlowResult:
+    async def async_step_reauth_confirm(self, user_input=None) -> ConfigFlowResult:
         """Pide la contraseña de nuevo para restablecer el refresh_token."""
         errors = {}
         reauth_entry = self._get_reauth_entry()

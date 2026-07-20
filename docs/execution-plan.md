@@ -24,6 +24,7 @@
 | 14 | CI GitHub Actions: pytest P0/P1, pytest P2 (Docker), hassfest (B5) | `.github/workflows/tests.yml` | 🟡 Media | ✅ Hecho (verificado en PR #6, 3 jobs en verde) |
 | 15 | Features de protocolo: sensor de humedad, disponibilidad heat/cool, min/max temp reales (F1/C8) | `sensor.py`, `climate.py` | 🟢 Baja | ✅ Hecho (107 tests verdes) |
 | 16 | Confirmación de comandos vía topic `feedback` (E7, parte 1: infraestructura + logs, sin revertir estado) | `mqtt_handler.py`, `status_parser.py`, `api.py`, `command_feedback.py` (nuevo), `climate.py`, `switch.py` | 🟡 Media | ✅ Hecho (122 tests verdes) |
+| 17 | Fiabilidad: `datetime.utcnow()` obsoleto (C6), `FlowResult`→`ConfigFlowResult` (C7), `should_poll=False` + disponibilidad por frescura MQTT (C5) | `api.py`, `config_flow.py`, `availability.py` (nuevo), `climate.py`, `sensor.py`, `switch.py` | 🟠 Alta | ✅ Hecho (126 tests verdes) |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -138,9 +139,20 @@
 - Tests: 4 nuevos P0 (`parse_feedback_payload`, `build_feedback_topic`, `extract_order_id`) + 5 nuevos P2 (`test_entities.py`: confirmación climate/switch, filtro por `ctl`, timeout). 122 tests verdes en total.
 - `manifest.json`: `2.1.0` → `2.2.0` (aditivo).
 
+### Tarea 17 — Fiabilidad: C5/C6/C7
+- **C6** (`api.py`): `datetime.datetime.utcnow()` (obsoleto) → `datetime.datetime.now(datetime.timezone.utc)` en `aws_sign_url`. `strftime` produce el mismo resultado con un datetime *aware* en UTC; sin cambios de comportamiento, tests de `test_aws_sign.py` (con reloj fijo vía `freezegun`) siguen en verde sin tocarlos.
+- **C7** (`config_flow.py`): `FlowResult` genérico (`homeassistant.data_entry_flow`) → `ConfigFlowResult` (`homeassistant.config_entries`), el tipo correcto para pasos de config flow en HA moderno. Verificado que existe en la versión pinneada del harness (2025.1.4) antes de usarlo. Revisión del resto del código con `pytest -W error::DeprecationWarning` no encontró más deprecaciones propias.
+- **C5**: nuevo `availability.py` (`AvailabilityMixin`, compartido por las 6 entidades: climate, switch, 4 sensores) — `_attr_should_poll = False` explícito, y `available` que devuelve `False` si no ha llegado un `status` MQTT para esa zona en más de `MQTT_STALE_AFTER_SECONDS` (360 s = 3× el refresco periódico de respaldo de 120 s; `const.py`). Empieza no disponible hasta el primer status tras el arranque/recarga.
+  - **Fallo de diseño encontrado y corregido durante la implementación:** con `should_poll=False`, nada volvía a evaluar `available` de forma proactiva — si el MQTT se caía y no llegaba más ningún status, el último estado publicado se habría quedado "disponible" para siempre (la propiedad solo se recalcula cuando algo llama a `async_write_ha_state()`). Solución: cada status recibido arma un `async_call_later(MQTT_STALE_AFTER_SECONDS)` que fuerza una reevaluación/republicación de estado si no ha llegado nada más nuevo para entonces.
+  - Efecto colateral esperado en `sensor.py`: antes, `async_write_ha_state()` solo se llamaba si el valor cambiaba; ahora se llama siempre que llega un status (aunque el valor no cambie), porque `available` puede haber cambiado aunque el valor no.
+- Tests: 4 nuevos en `test_entities.py` (no disponible hasta el primer status, disponible tras status, `should_poll=False`, no disponible de nuevo tras `MQTT_STALE_AFTER_SECONDS` — este último requirió `freezegun` real, no solo `async_fire_time_changed`, porque `available` vuelve a leer el reloj real al evaluarse). Varios tests existentes tuvieron que empezar a disparar un status antes de invocar servicios (`set_hvac_mode`, `turn_on`, etc.), porque ahora una entidad recién creada está "no disponible" y HA rechaza llamadas de servicio sobre entidades no disponibles. 126 tests verdes en total.
+- `manifest.json`: `2.2.0` → `2.3.0` (aditivo/comportamiento observable pero no incompatible: una entidad recién añadida tarda unos segundos en pasar de "no disponible" a su estado real, en vez de mostrar datos por defecto como si fueran reales).
+
 ### Pendiente (no bloqueado, siguiente)
 - E7 parte 2: revertir estado optimista — requiere validar en producción la forma real del payload de `feedback` (#23).
 - F2: velocidad de ventilador — bloqueado por #24 (significado de `vv`).
 - F5: servicio `mysair.stop_installation`. F6: temporizador/programas (más especulativo).
 - Robustez del parser de frame MQTT (#6, requiere dump real).
 - Traducciones/`strings.json` (C4) — desbloquearía poder reclamar `quality_scale` de nuevo.
+- C1: coordinador central de estado (refactor grande, no abordado).
+- D1-D4: observabilidad (`diagnostics.py`, redacción de logs, sensor de conexión MQTT).

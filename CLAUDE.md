@@ -55,7 +55,7 @@ pytest                      # ~89 tests: parser, builders MQTT, firma SigV4, cli
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 122 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback)
+docker compose run --rm test-ha    # 126 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad)
 
 # Lint / formato (recomendado: ruff; aún no configurado en el repo)
 ruff check custom_components/mysair tests
@@ -87,6 +87,7 @@ Los tests y la documentación están en la raíz del repo.
 | `status_parser.py` | Parsers **puros** de `status` (`parse_status_payload`) y `feedback` (`parse_feedback_payload`), sin dependencia de HA |
 | `mqtt_handler.py` | `MySairMQTTClient`: MQTT crudo sobre WebSocket (`websocket-client`) |
 | `command_feedback.py` | `CommandFeedbackMixin`: correlación de comandos con el ACK de `mysair_feedback` (climate/switch) |
+| `availability.py` | `AvailabilityMixin`: `should_poll=False` + `available` según frescura del último status MQTT (todas las entidades) |
 | `climate.py` | `MySairThermostat` (ClimateEntity) |
 | `sensor.py` | 4 sensores por zona (temp actual, consigna, modo, humedad) |
 | `switch.py` | `MySairSwitch` (power on/off) |
@@ -227,6 +228,7 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **Tests de entidades y eventos MQTT** (climate/sensor/switch reaccionando a `mysair_update`, comandos, filtro por `ctl`) — `tests/test_entities.py`, ver `docs/execution-plan.md` Tarea 13.
 - ✅ **Sensor de humedad y disponibilidad real de heat/cool** (F1) + **min/max temp reales** (C8) — ver `docs/execution-plan.md` Tarea 15.
 - ✅ **Confirmación de comandos vía topic `feedback`** (E7, parte 1): suscripción, evento `mysair_feedback`, log de confirmación/timeout por entidad. **Sin revertir estado todavía** — pendiente de validar el payload real en producción (#23). Ver `docs/execution-plan.md` Tarea 16.
+- ✅ **`datetime.utcnow()` obsoleto** (C6, en la firma SigV4), **`FlowResult`→`ConfigFlowResult`** (C7), y **`should_poll=False` + `available` por frescura de MQTT** (C5, todas las entidades no disponibles hasta el primer status y de nuevo si no llega nada en 360 s). Ver `docs/execution-plan.md` Tarea 17.
 
 Pendientes:
 - 🟡 **Parser de frame MQTT frágil** (#6, requiere dump real de bytes).

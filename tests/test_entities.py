@@ -157,6 +157,9 @@ async def test_event_from_other_installation_is_ignored(hass, monkeypatch):
 async def test_climate_set_hvac_mode_sends_command(hass, monkeypatch):
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    # C5: la entidad está "no disponible" hasta el primer status MQTT.
+    _fire_status(hass, "INST_A", _zone())
+    await hass.async_block_till_done()
 
     await hass.services.async_call(
         "climate", "set_hvac_mode",
@@ -173,7 +176,9 @@ async def test_climate_set_hvac_mode_sends_command(hass, monkeypatch):
 async def test_climate_set_temperature_while_off_does_not_send_command(hass, monkeypatch):
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
-    # La entidad arranca en OFF (estado local por defecto, sin evento MQTT todavía).
+    # C5: la entidad está "no disponible" hasta el primer status MQTT.
+    _fire_status(hass, "INST_A", _zone(is_on=False))
+    await hass.async_block_till_done()
     assert hass.states.get("climate.salon").state == HVACMode.OFF
 
     await hass.services.async_call(
@@ -189,6 +194,9 @@ async def test_climate_set_temperature_while_off_does_not_send_command(hass, mon
 async def test_switch_turn_on_off_sends_commands(hass, monkeypatch):
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    # C5: la entidad está "no disponible" hasta el primer status MQTT.
+    _fire_status(hass, "INST_A", _zone())
+    await hass.async_block_till_done()
 
     await hass.services.async_call(
         "switch", "turn_on", {"entity_id": "switch.salon"}, blocking=True
@@ -283,6 +291,8 @@ async def test_climate_command_confirmed_via_feedback(hass, monkeypatch, caplog)
     caplog.set_level(logging.INFO)
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone())
+    await hass.async_block_till_done()
 
     await hass.services.async_call(
         "climate", "set_hvac_mode",
@@ -301,12 +311,15 @@ async def test_climate_command_feedback_from_other_installation_ignored(hass, mo
     caplog.set_level(logging.INFO)
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone())
+    await hass.async_block_till_done()
 
     await hass.services.async_call(
         "climate", "set_hvac_mode",
         {"entity_id": "climate.salon", "hvac_mode": "heat"},
         blocking=True,
     )
+    assert len(calls) == 1
 
     hass.bus.async_fire(f"{DOMAIN}_feedback", {"order_id": "order-1", "ctl": "OTHER_INST", "raw": {}})
     await hass.async_block_till_done()
@@ -318,6 +331,8 @@ async def test_climate_command_timeout_logs_warning(hass, monkeypatch, caplog):
     caplog.set_level(logging.INFO)
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone())
+    await hass.async_block_till_done()
 
     await hass.services.async_call(
         "climate", "set_hvac_mode",
@@ -337,6 +352,8 @@ async def test_switch_command_confirmed_via_feedback(hass, monkeypatch, caplog):
     caplog.set_level(logging.INFO)
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone())
+    await hass.async_block_till_done()
 
     await hass.services.async_call(
         "switch", "turn_on", {"entity_id": "switch.salon"}, blocking=True
@@ -347,3 +364,52 @@ async def test_switch_command_confirmed_via_feedback(hass, monkeypatch, caplog):
     await hass.async_block_till_done()
 
     assert "Comando confirmado" in caplog.text
+
+
+# --- Disponibilidad por frescura de datos MQTT (C5) ---
+
+async def test_entities_unavailable_until_first_status(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    assert hass.states.get("climate.salon").state == "unavailable"
+    assert hass.states.get("switch.salon").state == "unavailable"
+    assert hass.states.get("sensor.salon_temperatura_actual").state == "unavailable"
+    assert hass.states.get("sensor.salon_humedad").state == "unavailable"
+
+
+async def test_entities_become_available_after_status(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone())
+    await hass.async_block_till_done()
+
+    assert hass.states.get("climate.salon").state != "unavailable"
+    assert hass.states.get("switch.salon").state != "unavailable"
+    assert hass.states.get("sensor.salon_temperatura_actual").state != "unavailable"
+
+
+async def test_availability_mixin_disables_polling():
+    from custom_components.mysair.availability import AvailabilityMixin
+    assert AvailabilityMixin._attr_should_poll is False
+
+
+async def test_entities_become_unavailable_after_stale_timeout(hass, monkeypatch):
+    # `available` vuelve a llamar a dt_util.utcnow() al evaluarse; para que la
+    # comprobación de caducidad dé positivo hace falta congelar el reloj real
+    # (async_fire_time_changed solo dispara el callback programado, no mueve
+    # el reloj que `available` lee de forma independiente).
+    freezegun = pytest.importorskip("freezegun")
+    from custom_components.mysair.const import MQTT_STALE_AFTER_SECONDS
+
+    with freezegun.freeze_time(dt_util.utcnow()) as frozen:
+        await _setup_entry(hass, monkeypatch)
+        _fire_status(hass, "INST_A", _zone())
+        await hass.async_block_till_done()
+        assert hass.states.get("climate.salon").state != "unavailable"
+
+        frozen.tick(timedelta(seconds=MQTT_STALE_AFTER_SECONDS + 1))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+    assert hass.states.get("climate.salon").state == "unavailable"
+    assert hass.states.get("switch.salon").state == "unavailable"

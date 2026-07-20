@@ -8,6 +8,7 @@ from homeassistant.components.climate.const import (
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 from homeassistant.core import callback
 
+from .availability import AvailabilityMixin
 from .command_feedback import CommandFeedbackMixin
 from .const import DOMAIN
 
@@ -31,7 +32,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     _LOGGER.info(f"[MySair Climate] ✅ {len(entities)} termostatos creados.")
 
 
-class MySairThermostat(CommandFeedbackMixin, ClimateEntity):
+class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
     """Entidad Climate de un termostato MySair."""
 
     _attr_supported_features = (
@@ -59,6 +60,7 @@ class MySairThermostat(CommandFeedbackMixin, ClimateEntity):
         self._attr_max_temp = 30
         self._unsub = None
         self._init_command_feedback()
+        self._init_availability()
 
     @property
     def device_info(self):
@@ -80,6 +82,7 @@ class MySairThermostat(CommandFeedbackMixin, ClimateEntity):
             self._unsub()
             self._unsub = None
         self._stop_feedback_listener()
+        self._stop_availability()
 
     @property
     def hvac_mode(self):
@@ -197,6 +200,7 @@ class MySairThermostat(CommandFeedbackMixin, ClimateEntity):
                 continue
 
             _LOGGER.debug(f"[MySair Climate] 📨 Evento recibido para {self._attr_name}")
+            self._mark_status_received()
             if zone.get("temp_actual") is not None:
                 self._current_temperature = zone.get("temp_actual")
             if zone.get("temp_target") is not None:

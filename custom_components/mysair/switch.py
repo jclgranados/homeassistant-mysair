@@ -2,6 +2,7 @@ import logging
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import callback
 
+from .availability import AvailabilityMixin
 from .command_feedback import CommandFeedbackMixin
 from .const import DOMAIN
 
@@ -25,7 +26,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     _LOGGER.info(f"[MySair Switch] ✅ {len(entities)} switches creados.")
 
 
-class MySairSwitch(CommandFeedbackMixin, SwitchEntity):
+class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
     """Entidad Switch para encender o apagar cada termostato MySair."""
 
     _attr_icon = "mdi:power"
@@ -43,6 +44,7 @@ class MySairSwitch(CommandFeedbackMixin, SwitchEntity):
         self._last_ac_mode = "0"
         self._unsub = None
         self._init_command_feedback()
+        self._init_availability()
 
     @property
     def device_info(self):
@@ -101,6 +103,7 @@ class MySairSwitch(CommandFeedbackMixin, SwitchEntity):
             self._unsub()
             self._unsub = None
         self._stop_feedback_listener()
+        self._stop_availability()
 
     @callback
     def _handle_mqtt_update(self, event):
@@ -114,6 +117,7 @@ class MySairSwitch(CommandFeedbackMixin, SwitchEntity):
         for zone in data.get("zones", []):
             if zone.get("zone_id") != self.device_id:
                 continue
+            self._mark_status_received()
             self._is_on = bool(zone.get("is_on"))
             # Recordar el modo AC (calor/frío) para preservarlo al reencender.
             if zone.get("is_ac") and zone.get("mode_raw") in ("0", "1"):
