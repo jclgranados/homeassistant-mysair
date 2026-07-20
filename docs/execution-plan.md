@@ -16,6 +16,7 @@
 | 6 | Reestructurar a `custom_components/mysair/` (G1) | todo el paquete | 🟡 Media | ✅ Hecho (desbloquea pytest + HACS) |
 | 7 | Corregir codificación de modo/encendido (A5) | `status_parser.py`, `climate.py`, `sensor.py`, `switch.py` | 🔴 Crítica | ✅ Hecho (confirmado con app oficial) |
 | 8 | Robustez MQTT: client_id único, refresco creds, topic dinámico (#20/#22/#5) | `mqtt_handler.py`, `api.py` | 🔴 Crítica | ✅ Hecho (69 tests verdes) |
+| 9 | Modernización HA: `unique_id` (C2), password fuera de la config entry (A6), reauth flow (C3) | `config_flow.py`, `api.py`, `__init__.py` | 🟠 Alta | ✅ Hecho (78 tests verdes) |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -63,7 +64,16 @@
 - Seguridad: el log de conexión ya no imprime la URL firmada (solo host + clientId).
 - Tests: `tests/test_mqtt_connection.py` (client_id único/formato, topic, expiración). 69 tests verdes.
 
+### Tarea 9 — Modernización HA: unique_id, password fuera de la config entry, reauth (C2/A6/C3)
+- `config_flow.py`: `async_set_unique_id(email.lower())` + `_abort_if_unique_id_configured()` en `async_step_user` (evita entradas duplicadas de la misma cuenta).
+- `config_flow.py`: la config entry solo guarda `email` + `refresh_token`; el `password` se usa solo en memoria durante el flujo y nunca se persiste.
+- `api.py`: `login()`/`refresh_tokens()` lanzan `MySairAuthError` (credenciales/refresh_token inválidos) o `MySairConnectionError` (red/backend) en vez de una `Exception` genérica o `return False`. `MySairAPI` acepta `password=None` (ya no obligatorio) y un callback opcional `on_tokens_refreshed(access_token, refresh_token)` invocado tras cada login/refresh (el refresh_token rota en cada renovación).
+- `__init__.py`: `async_setup_entry` ya no hace `login()` con password; renueva la sesión con `api.refresh_tokens()` a partir del `refresh_token` guardado. `MySairAuthError` → `ConfigEntryAuthFailed` (dispara reauth en la UI de HA); `MySairConnectionError` / sin ubicaciones / sin instalaciones → `ConfigEntryNotReady` (HA reintenta con backoff). El callback `on_tokens_refreshed` persiste el nuevo `refresh_token` en la config entry vía `hass.loop.call_soon_threadsafe`.
+- **Migración automática:** en el primer arranque correcto tras esta actualización, si la config entry todavía tiene `password`/`access_token` de instalaciones previas, se eliminan de `entry.data`.
+- `config_flow.py`: `async_step_reauth` / `async_step_reauth_confirm` piden la contraseña de nuevo y renuevan el `refresh_token` con `async_update_reload_and_abort` (recarga la entrada automáticamente).
+- Tests: 9 nuevos en `test_api.py` (excepciones tipadas, callback de rotación de tokens). 78 tests verdes.
+- **Limitación conocida:** `config_flow.py` y `__init__.py` (unique_id, reauth, `ConfigEntryAuthFailed`/`NotReady`) no tienen tests automatizados — requieren `pytest-homeassistant-custom-component` + Python ≥3.12, no disponibles en este entorno (ver `docs/testing-strategy.md`). Verificado manualmente en producción por el usuario (cuenta real, 2026-07-20) para el camino feliz (login inicial + arranque normal); el camino de reauth (refresh_token inválido) no se ha probado en producción todavía.
+
 ### Pendiente (no bloqueado, siguiente)
-- Modernización HA (A6 password/reauth, C2 unique_id, C3 ConfigEntryAuthFailed/NotReady).
 - Features desde hallazgos: sensor de humedad (`hm`), ventilador (`fanspeed`/`vv`), disponibilidad heat/cool (`c`/`f`).
-- Robustez del parser de frame MQTT (#6, requiere dump real) y multi-location (#15).
+- Robustez del parser de frame MQTT (#6, requiere dump real).

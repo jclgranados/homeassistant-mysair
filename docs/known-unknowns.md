@@ -42,7 +42,7 @@ Ver `docs/protocol-findings.md` para el detalle con las citas del JS.
 | 12 | ¿Qué campos tiene un `device` además de `reference`/`name`? | Fallbacks `rf`/`id` (`climate.py:25`) sugieren incertidumbre | Puede incluir tipo, capacidades, estado online | Inspeccionar respuesta `/devices` | 🟡 Medio |
 | 13 | ¿El campo correcto es `reference` o `rf`/`id`? | Fallback en cadena | `reference` | Ver respuesta real | 🟡 Medio |
 | 14 | ¿Qué hace `validated=1`? | Query fija (`api.py:161`) | Filtra instalaciones validadas | Probar con `validated=0` | 🟢 Bajo |
-| 15 | ¿Puede una cuenta tener varias `Location`? El código usa solo la primera. | `__init__.py:39` | Sí; se pierden las demás | Cuenta con 2 ubicaciones | 🟡 Medio: instalaciones no visibles |
+| 15 | ¿Puede una cuenta tener varias `Location`? El código usa solo la primera. | `__init__.py:39` | Sí; se pierden las demás | ✅ Validado en producción con cuenta real (2026-07-20): el flujo funciona correctamente con una `Location`. **Decisión de alcance:** se mantiene deliberadamente solo la primera `Location`; multi-location queda fuera de alcance salvo que un usuario lo necesite. | 🟢 Bajo (aceptado) |
 | 16 | Duración del `access_token` | ✅ Resuelto | El login trae `expires_at` (unix s). La app refresca con timer; nosotros solo ante 401. Oportunidad de refresco proactivo. |
 | 17 | ¿`command:"temp"` acepta `value` string? | ✅ Resuelto | String (`setTemp` envía `""+i`). |
 | 18 | ¿Endpoint HTTP para leer estado? | 🟢 Abierto | No observado; el estado llega por MQTT. |
@@ -72,8 +72,9 @@ Ver `docs/protocol-findings.md` para el detalle con las citas del JS.
 ## 6. Resumen
 
 - ✅ **Resueltos desde el bundle oficial** (`docs/protocol-findings.md`): #1-5, #7-9, #11, #16-17, #20-22.
-- 🟡 **Abiertos (menores / requieren captura real):** #6 (bytes del frame — robustez del parser), #10 (password MQTT), #12/#13 (campos HTTP de `/devices`), #14 (`validated`), #15 (multi-location), #18/#19 (endpoints/rate limiting).
+- 🟡 **Abiertos (menores / requieren captura real):** #6 (bytes del frame — robustez del parser), #10 (password MQTT), #12/#13 (campos HTTP de `/devices`), #14 (`validated`), #18/#19 (endpoints/rate limiting).
+- 🟢 **Aceptados por decisión de alcance:** #15 (multi-location — fuera de alcance, validado en producción con una `Location`).
 
 **Correcciones de código pendientes derivadas (ver roadmap):**
 - 🔴 `client_id` MQTT único (#20) · 🔴 refrescar credenciales con `aws_expires_at` (#22)
-- 🟡 base del topic desde `aws_base_topic` (#5) · 🟡 refresco proactivo del token (#16) · 🟡 soporte multi-location (#15)
+- 🟡 base del topic desde `aws_base_topic` (#5) · 🟡 refresco proactivo del token (#16)

@@ -1,9 +1,10 @@
 import asyncio
 import logging
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
-from .api import MySairAPI
+from .api import MySairAPI, MySairAuthError, MySairConnectionError
 from .mqtt_handler import MySairMQTTClient
 from .status_parser import parse_status_payload
 from .const import DOMAIN
@@ -13,29 +14,60 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["climate", "sensor", "switch"]
 
 
+@callback
+def _persist_refresh_token(hass: HomeAssistant, entry: ConfigEntry, refresh_token) -> None:
+    """Guarda el refresh_token si ha rotado (cada renovación invalida el anterior)."""
+    if not refresh_token or refresh_token == entry.data.get("refresh_token"):
+        return
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, "refresh_token": refresh_token}
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Configura la integración MySair."""
     email = entry.data.get("email")
-    password = entry.data.get("password")
+    refresh_token = entry.data.get("refresh_token")
+    if not email or not refresh_token:
+        raise ConfigEntryAuthFailed("Faltan credenciales; reautentica la integración MySair.")
 
     _LOGGER.info(f"[MySair] 🔐 Autenticando usuario {email}")
-    api = MySairAPI(email, password)
 
-    # --- LOGIN ---
-    await hass.async_add_executor_job(api.login)
+    def _on_tokens_refreshed(access_token, refresh_token_value):
+        # Se invoca desde un hilo ejecutor: hay que volver al loop para tocar hass.
+        hass.loop.call_soon_threadsafe(_persist_refresh_token, hass, entry, refresh_token_value)
+
+    api = MySairAPI(email, on_tokens_refreshed=_on_tokens_refreshed)
+    api.refresh_token_value = refresh_token
+
+    # --- SESIÓN: renovar tokens a partir del refresh_token guardado (A6: no se
+    # persiste ni se usa password tras la configuración inicial). ---
+    try:
+        await hass.async_add_executor_job(api.refresh_tokens)
+    except MySairAuthError as err:
+        raise ConfigEntryAuthFailed(f"Sesión MySair inválida o expirada: {err}") from err
+    except MySairConnectionError as err:
+        raise ConfigEntryNotReady(f"No se pudo conectar con MySair: {err}") from err
+
+    # Migración: entradas creadas antes de A6 guardaban password/access_token
+    # en claro; ya no se usan, se eliminan de la config entry en el primer
+    # arranque correcto tras la actualización.
+    stale_keys = {"password", "access_token"} & entry.data.keys()
+    if stale_keys:
+        hass.config_entries.async_update_entry(
+            entry, data={k: v for k, v in entry.data.items() if k not in stale_keys}
+        )
 
     # --- ESTRUCTURA: Locations → Installations → Devices ---
     locations = await hass.async_add_executor_job(api.get_locations)
     if not locations:
-        _LOGGER.error("[MySair] ❌ No se encontraron ubicaciones.")
-        return False
+        raise ConfigEntryNotReady("No se encontraron ubicaciones en la cuenta MySair.")
 
     first_loc = locations[0]
     location_id = first_loc["id"]
     installations = await hass.async_add_executor_job(api.get_installations, location_id)
     if not installations:
-        _LOGGER.error("[MySair] ❌ No se encontraron instalaciones en la ubicación.")
-        return False
+        raise ConfigEntryNotReady("No se encontraron instalaciones en la ubicación MySair.")
 
     _LOGGER.info(f"[MySair] 🏠 Instalaciones detectadas: {[i['reference'] for i in installations]}")
 

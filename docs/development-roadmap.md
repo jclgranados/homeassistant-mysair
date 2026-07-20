@@ -14,7 +14,7 @@
 | A3 | **Eliminar o reescribir `select.py`** (no cargado y con bugs). Si se reescribe, alinearlo con el resto y añadirlo a `PLATFORMS`. | 🔴 | `select.py`, `__init__.py:14` |
 | A4 | **Limpiar `requirements`:** dejar `requests` y `websocket-client==1.8.0`; quitar `aiohttp`, `paho-mqtt`, `boto3`. Eliminar el preload de paho. | 🟠 | `manifest.json:12-18`, `__init__.py:22` |
 | A5 | **Resolver la codificación de modo** (bloqueante — ver `known-unknowns` #1,#2,#4) y arreglar `switch.async_turn_on` que enciende siempre en "frío". | 🔴 | `switch.py:64`, `api.py:256` |
-| A6 | **No guardar `password` en claro / tokens no usados** (ver `security-and-privacy` §3). | 🟠 | `config_flow.py:50-52` |
+| A6 | **No guardar `password` en claro / tokens no usados** (ver `security-and-privacy` §3). | ✅ Hecho | `config_flow.py`, `api.py`, `__init__.py` |
 | A7 | **Refresco proactivo de credenciales AWS** en reconexión MQTT (hoy reutiliza firma caducada). | 🟠 | `mqtt_handler.py:110` |
 
 ---
@@ -36,8 +36,8 @@
 | # | Tarea | Prio |
 |---|---|---|
 | C1 | Introducir un **almacén central / coordinador** de estado por zona en vez del fan-out por event bus. | 🟡 |
-| C2 | Añadir `unique_id` a la config entry (`async_set_unique_id`) para evitar duplicados. | 🟡 |
-| C3 | **Reauth flow** (`async_step_reauth`) y uso de `ConfigEntryAuthFailed`/`ConfigEntryNotReady`. | 🟡 |
+| C2 | Añadir `unique_id` a la config entry (`async_set_unique_id`) para evitar duplicados. | ✅ Hecho |
+| C3 | **Reauth flow** (`async_step_reauth`) y uso de `ConfigEntryAuthFailed`/`ConfigEntryNotReady`. | ✅ Hecho |
 | C4 | `translations/` + `strings.json` (config flow, entidades). | 🟡 |
 | C5 | `_attr_should_poll = False` explícito; `available` basado en frescura de datos MQTT. | 🟡 |
 | C6 | Sustituir `datetime.utcnow()` por `datetime.now(timezone.utc)` en la firma SigV4. | 🟡 |
@@ -75,7 +75,6 @@
 
 | # | Tarea | Prio |
 |---|---|---|
-| F1 | Soporte multi-`Location` (hoy solo la primera). | 🟡 |
 | F2 | Exponer velocidad de ventilador / apertura de compuerta si existen en el protocolo (`known-unknowns` §2). | 🟢 |
 | F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | 🟢 |
 | F4 | `select` de modo reescrito y funcional. | 🟢 |

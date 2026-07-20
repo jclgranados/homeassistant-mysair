@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("requests")
 
-from api import MySairAPI
+from api import MySairAPI, MySairAuthError, MySairConnectionError
 
 
 def _api(session):
@@ -32,6 +32,83 @@ def test_login_missing_token_raises(fake_session, make_response):
     fake_session.queue("post", make_response(200, {"entity": {}}))
     with pytest.raises(Exception):
         _api(fake_session).login()
+
+
+def test_login_invalid_credentials_raises_auth_error(fake_session, make_response):
+    fake_session.queue("post", make_response(401, {}, "unauthorized"))
+    with pytest.raises(MySairAuthError):
+        _api(fake_session).login()
+
+
+def test_login_backend_error_raises_connection_error(fake_session, make_response):
+    fake_session.queue("post", make_response(500, {}, "boom"))
+    with pytest.raises(MySairConnectionError):
+        _api(fake_session).login()
+
+
+def test_login_notifies_tokens_callback(fake_session, make_response, login_ok):
+    fake_session.queue("post", make_response(200, login_ok))
+    calls = []
+    api = MySairAPI(
+        "user@example.com", "secret", session=fake_session,
+        on_tokens_refreshed=lambda access, refresh: calls.append((access, refresh)),
+    )
+    api.login()
+    assert calls == [("TEST_ACCESS", "TEST_REFRESH")]
+
+
+def test_login_callback_error_does_not_break_login(fake_session, make_response, login_ok):
+    fake_session.queue("post", make_response(200, login_ok))
+
+    def boom(access, refresh):
+        raise RuntimeError("callback roto")
+
+    api = MySairAPI("user@example.com", "secret", session=fake_session, on_tokens_refreshed=boom)
+    assert api.login() is True
+
+
+# --- REFRESH TOKENS ---
+
+def test_refresh_tokens_without_value_raises_auth_error(fake_session):
+    api = _api(fake_session)
+    api.refresh_token_value = None
+    with pytest.raises(MySairAuthError):
+        api.refresh_tokens()
+
+
+def test_refresh_tokens_invalid_raises_auth_error(fake_session, make_response):
+    fake_session.queue("put", make_response(401, {}, "unauthorized"))
+    api = _api(fake_session)
+    api.refresh_token_value = "OLD_REFRESH"
+    with pytest.raises(MySairAuthError):
+        api.refresh_tokens()
+
+
+def test_refresh_tokens_backend_error_raises_connection_error(fake_session, make_response):
+    fake_session.queue("put", make_response(500, {}, "boom"))
+    api = _api(fake_session)
+    api.refresh_token_value = "OLD_REFRESH"
+    with pytest.raises(MySairConnectionError):
+        api.refresh_tokens()
+
+
+def test_refresh_tokens_ok_notifies_callback(fake_session, make_response):
+    fake_session.queue("put", make_response(200, {"entity": {"access_token": "NEW", "refresh_token": "NEW_R"}}))
+    calls = []
+    api = MySairAPI(
+        "user@example.com", session=fake_session,
+        on_tokens_refreshed=lambda access, refresh: calls.append((access, refresh)),
+    )
+    api.refresh_token_value = "OLD_REFRESH"
+    assert api.refresh_tokens() is True
+    assert api.access_token == "NEW"
+    assert calls == [("NEW", "NEW_R")]
+
+
+def test_api_works_without_password():
+    # A6: la API debe poder construirse sin password (solo refresh_token en runtime).
+    api = MySairAPI("user@example.com")
+    assert api.password is None
 
 
 # --- DESCUBRIMIENTO ---
@@ -110,7 +187,7 @@ def test_send_instruction_401_refreshes_and_retries(
 def test_send_instruction_401_without_refresh_token_raises(fake_session, make_response):
     fake_session.queue("post", make_response(401, {}))
     api = _api(fake_session)
-    api.refresh_token_value = None  # refresh_tokens devuelve False → sin reintento
+    api.refresh_token_value = None  # refresh_tokens() lanza MySairAuthError → sin reintento
     with pytest.raises(Exception):
         api.send_instruction([{"command": "x"}])
 

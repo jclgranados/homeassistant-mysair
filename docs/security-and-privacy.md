@@ -9,8 +9,9 @@
 | Dato | Dónde vive | Persistencia | Riesgo | Certeza |
 |---|---|---|---|---|
 | `email` | `entry.data["email"]` | Config entry (disco, `.storage/core.config_entries`) | Bajo | Confirmado |
-| `password` **en claro** | `entry.data["password"]` | Config entry (disco) | 🔴 Alto | Confirmado (`config_flow.py:50`) |
-| `access_token` / `refresh_token` | `entry.data` (nunca reutilizados) y `MySairAPI` en memoria | Config entry + memoria | 🟡 Medio | Confirmado (`config_flow.py:51-52`) |
+| `password` | Solo en memoria durante el flujo de login/reauth (`config_flow.py`); **nunca** se persiste en `entry.data` | No persistida | 🟢 Bajo (resuelto, A6) | Confirmado |
+| `refresh_token` | `entry.data["refresh_token"]` (rota en cada renovación; se persiste la nueva versión vía `on_tokens_refreshed`) | Config entry (disco) | 🟡 Medio (permite renovar sesión sin password) | Confirmado (`api.py`, `__init__.py`) |
+| `access_token` | Solo en memoria (`MySairAPI.access_token`); se reconstruye en cada arranque a partir del `refresh_token` | No persistida | 🟢 Bajo | Confirmado |
 | Credenciales AWS IoT (`aws_access_key_id`, `aws_secret_access_key`, `aws_security_token`) | `MySairAPI.aws_credentials` | Solo memoria | 🟡 Medio (temporales) | Confirmado (`api.py:121-128`) |
 | URL MQTT firmada (contiene credencial + firma) | Variable local en `_run` | Solo memoria; **se loguea truncada a 120 chars** | 🟡 Medio | Confirmado (`mqtt_handler.py:131`) |
 
@@ -39,12 +40,12 @@
 
 ## 3. Almacenamiento de credenciales — recomendaciones
 
-1. 🔴 **No guardar `password` en claro.** Opciones:
-   - Guardar solo `refresh_token` y usar `PUT /user/refreshtokens` para renovar (requiere que el refresh token no caduque pronto — **Desconocido**).
-   - Si hay que conservar la contraseña para re-login, documentarlo y asumir que HA cifra `.storage` solo si el disco está cifrado (no lo hace por sí mismo).
-2. 🔴 **Eliminar `access_token`/`refresh_token` de `entry.data`** si no se reutilizan (hoy no se usan): son ruido que caduca.
-3. 🟡 Implementar **reauth flow** para rotar contraseña sin borrar la entrada.
-4. 🟡 Tratar las credenciales AWS como **efímeras**: refrescarlas proactivamente antes de cada reconexión MQTT (hoy se reutilizan hasta fallar — ver `mqtt_handler.py:110`).
+1. ✅ **Resuelto (A6):** ya no se guarda `password` en claro. `config_flow.py` solo persiste `email` + `refresh_token`; `__init__.py` renueva la sesión en cada arranque con `MySairAPI.refresh_tokens()` (usa `PUT /user/refreshtokens`, no requiere password). El `refresh_token` rota en cada renovación y se repersiste vía el callback `on_tokens_refreshed` (`api.py`) → `_persist_refresh_token` (`__init__.py`).
+   - **Migración automática:** si una config entry antigua todavía tiene `password`/`access_token` guardados (instalaciones previas a este cambio), `async_setup_entry` los elimina de `entry.data` en el primer arranque correcto tras actualizar.
+   - `access_token` deja de persistirse: es efímero y se reconstruye en memoria en cada arranque.
+2. ✅ **Resuelto (C3):** flujo de **reauth** (`async_step_reauth`/`async_step_reauth_confirm` en `config_flow.py`) — si el `refresh_token` deja de ser válido, `async_setup_entry` lanza `ConfigEntryAuthFailed` y Home Assistant ofrece reautenticar pidiendo la contraseña de nuevo (sin borrar la entrada). Errores de red/backend lanzan `ConfigEntryNotReady` (reintento con backoff de HA) en vez de fallar el setup de forma permanente.
+3. 🟡 Tratar las credenciales AWS como **efímeras**: refrescarlas proactivamente antes de cada reconexión MQTT — ✅ ya resuelto (ver `docs/protocol-findings.md` §6b, tarea 8 de `execution-plan.md`).
+4. 🟡 **Pendiente:** el `refresh_token` sigue siendo un secreto de larga vida en disco (aunque ya no la password). Si `.storage` no está en un disco cifrado, sigue siendo legible por quien tenga acceso al filesystem de HA — limitación inherente al modelo de config entries de HA, no exclusiva de esta integración.
 
 ---
 
