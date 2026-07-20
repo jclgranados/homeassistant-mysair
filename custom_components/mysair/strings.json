@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MySair",
+        "description": "Sign in with your MySair account credentials.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate MySair",
+        "description": "The session for {email} has expired or is no longer valid. Enter your password again to continue.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Could not connect to MySair. Please try again later.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This account is already configured.",
+      "reauth_successful": "Reauthentication was successful."
+    }
+  },
+  "services": {
+    "stop_installation": {
+      "name": "Stop installation",
+      "description": "Stops an entire MySair installation (all its zones at once) using the backend's \"stop\" command. Different from turning off each zone individually with a switch or climate entity.",
+      "fields": {
+        "installation_ref": {
+          "name": "Installation reference",
+          "description": "Reference (ctl) of the installation to stop, as it appears in parentheses in the device name of its entities (e.g. \"MYS94B97E0C9177FB6\")."
+        }
+      }
+    }
+  }
+}

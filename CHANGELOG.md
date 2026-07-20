@@ -6,6 +6,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-07-20
+
+### Added
+- Traducción del asistente de configuración (login, reautenticación, errores) y del servicio `mysair.stop_installation`: inglés por defecto (`strings.json`) y español (`translations/es.json`). Los nombres de las entidades (climate/sensor/switch) siguen en español, sin cambios.
+
 ## [2.6.0] - 2026-07-20
 
 ### Added
