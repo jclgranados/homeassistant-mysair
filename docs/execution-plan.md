@@ -15,6 +15,7 @@
 | 5 | Primeros tests P0/P1 + fixtures (B2/B3) | `tests/` | 🟠 Alta | ✅ Hecho (57 tests verdes) |
 | 6 | Reestructurar a `custom_components/mysair/` (G1) | todo el paquete | 🟡 Media | ✅ Hecho (desbloquea pytest + HACS) |
 | 7 | Corregir codificación de modo/encendido (A5) | `status_parser.py`, `climate.py`, `sensor.py`, `switch.py` | 🔴 Crítica | ✅ Hecho (confirmado con app oficial) |
+| 8 | Robustez MQTT: client_id único, refresco creds, topic dinámico (#20/#22/#5) | `mqtt_handler.py`, `api.py` | 🔴 Crítica | ✅ Hecho (69 tests verdes) |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -52,3 +53,17 @@
 - `sensor.py` (modo): OFF/HEAT/COOL derivado de `is_on` + paridad de `m`.
 - `switch.py`: `turn_on` deja de forzar frío; envía `mode` preservando el último modo AC conocido (por defecto calor `"0"`); `is_on` desde `e`.
 - Tests: reescrito `test_status_parser` a la semántica correcta (57 tests verdes).
+
+### Tarea 8 — Robustez MQTT (#20/#22/#5)
+- Fuente: `docs/protocol-findings.md §6b` (bundle oficial).
+- `mqtt_handler.build_client_id()`: clientId único por conexión `mqtt-client_{accessKey}_{ts}_{rand}` (antes `aws_mqtt_user` → colisión con la app).
+- `mqtt_handler.build_status_topic()`: topic desde `aws_base_topic` (fallback `pro/v1/`).
+- `api.refresh_aws_credentials`: captura `aws_base_topic` y `aws_expires_at`.
+- `api.aws_credentials_expired()`: refresco proactivo por `aws_expires_at`; el `_run` de MQTT lo consulta en cada intento (antes solo si faltaban).
+- Seguridad: el log de conexión ya no imprime la URL firmada (solo host + clientId).
+- Tests: `tests/test_mqtt_connection.py` (client_id único/formato, topic, expiración). 69 tests verdes.
+
+### Pendiente (no bloqueado, siguiente)
+- Modernización HA (A6 password/reauth, C2 unique_id, C3 ConfigEntryAuthFailed/NotReady).
+- Features desde hallazgos: sensor de humedad (`hm`), ventilador (`fanspeed`/`vv`), disponibilidad heat/cool (`c`/`f`).
+- Robustez del parser de frame MQTT (#6, requiere dump real) y multi-location (#15).

@@ -127,14 +127,55 @@ Coincide con el topic `pro/v1/get/ctl/{ref}/#` de la integración (con el prefij
 
 ---
 
+## 6b. Conexión MQTT, topics y expiración (CONFIRMADO)
+
+### Cliente MQTT y clientId
+```js
+Ha=e=>Fa.device({
+  accessKeyId:e.accessKeyId, secretKey:e.secretKey, sessionToken:e.sessionToken,
+  clientId:`mqtt-client_${e.accessKeyId}_${Date.now()}`,   // ÚNICO por conexión
+  protocol:"wss", host:e.host
+})
+```
+- El `clientId` MQTT es **único por conexión** (`mqtt-client_<accessKeyId>_<timestamp>`), **no** el `aws_mqtt_user`.
+- `getClientId()` = `aws_mqtt_user` se usa solo como campo `app` de las instrucciones y en el topic de feedback.
+
+### Estructura de topics
+```js
+subscribe(e){ e=`${this._basePath}get/${e}`; ... }          // suscripción
+publish(e,t){ e=`${this._basePath}set/${e}`; ... }           // publicación (la app usa HTTP para comandos)
+processTopic(e){ var t=e.split("/"); return {env:t[0],version:t[1],method:t[2],type:t[3],device:t[4],property:t.slice(5).join("/")} }
+```
+- `_basePath` = `aws_base_topic` (campo de las credenciales) = `pro/v1/`.
+- Estructura: `env/version/method/type/device/property` → p. ej. `pro/v1/get/ctl/{ref}/status`.
+- La integración se suscribe a `pro/v1/get/ctl/{ref}/#` y recibe `.../status`. **Coincide.**
+- Existe además `pro/v1/get/usr/{aws_mqtt_user}/feedback` (ack de instrucciones con `orderId`); la app lo usa para correlacionar comando→respuesta. La integración no lo usa.
+
+### Expiración y refresco (session)
+```js
+getExpirationTime(){ return 1e3*expires_at - now }          // token HTTP
+getMqttExpirationTime(){ return 1e3*aws_expires_at - now }  // credenciales AWS
+getAwsCredential(){ return {host:aws_mqtt_host, basePath:aws_base_topic, accessKeyId, secretKey, sessionToken, clientId:aws_mqtt_user} }
+// controlMqtt: setTimeout(refreshAwsCredentials, getMqttExpirationTime()) → refresca justo antes de expirar y reconecta
+```
+- Las credenciales AWS incluyen **`aws_expires_at`** (unix s) y **`aws_base_topic`**; el login incluye **`expires_at`**.
+- La app **refresca proactivamente** las credenciales antes de `aws_expires_at`.
+
+Config del bundle: `VUE_APP_API_DOMAIN="https://api.mysair.es"`, `VUE_APP_OUTSERVICE_MILISECOND="5000"`.
+
 ## 7. Impacto en la integración (correcciones derivadas)
 
 | Área | Estado actual | Corrección confirmada |
 |---|---|---|
 | Comando `mode` heat/cool (solo-aire) | `0`=calor, `1`=frío | ✅ Ya correcto |
-| Parser de estado: modo | Lee `e` como modo (0=off,1=heat,2=cool) | 🔴 Debe leer **on/off de `e`** y **calor/frío de la paridad de `m`** |
-| `switch.turn_on` | Envía `mode:"1"` (fuerza frío) | 🔴 Encender debe preservar/usar calor (m par) o el modo actual |
+| Parser de estado: modo | Leía `e` como modo | ✅ Corregido (A5): on/off de `e`, calor/frío por paridad de `m` |
+| `switch.turn_on` | Enviaba `mode:"1"` (forzaba frío) | ✅ Corregido (A5): preserva último modo, por defecto calor |
 | `power` off | `value:"0"` | ✅ Ya correcto |
 | Campos `tr/tc/tmm/tmx` | Correctos | ✅ |
-| Capacidades (`c/f/v/s`) y humedad (`hm`) | No usados | 🟢 Oportunidad: exponer disponibilidad heat/cool, fan, humedad |
+| **`client_id` MQTT** | Usa `aws_mqtt_user` (colisiona con la app → expulsiones) | 🔴 Debe ser único por conexión: `mqtt-client_{accessKeyId}_{ts}` |
+| **Expiración credenciales AWS** | Reutiliza hasta fallar | 🔴 Leer `aws_expires_at` y refrescar antes de expirar (y en cada reconexión) |
+| **Base del topic** | Hardcodea `pro/v1/get/` | 🟡 Debería venir de `aws_base_topic` (fallback al valor actual) |
+| Token HTTP `expires_at` | Refresca solo ante 401 | 🟡 Oportunidad: refresco proactivo |
+| Topic de feedback `usr/{user}/feedback` | No usado | 🟢 Oportunidad: correlación comando→ack por `orderId` |
+| Capacidades (`c/f/v/s`) y humedad (`hm`) | Parseadas, sin entidad | 🟢 Oportunidad: exponer disponibilidad heat/cool, fan, humedad |
 | Comandos `fanspeed/temporizer/stop/programs` | No implementados | 🟢 Oportunidad de nuevas funcionalidades |

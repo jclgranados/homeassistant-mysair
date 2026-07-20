@@ -17,8 +17,8 @@
 | Subprotocolo WS | Header `Sec-WebSocket-Protocol: mqtt` | Confirmado (`mqtt_handler.py:134`) |
 | Autenticación | **AWS SigV4** en la query string de la URL (`X-Amz-*`) | Confirmado (`api.py:288-329`) |
 | Servicio SigV4 | `iotdevicegateway` | Confirmado (`api.py:292`) |
-| Client ID (MQTT) | `aws_mqtt_user` (ej. `web####`) | Confirmado (`mqtt_handler.py:125,161`) |
-| Username (MQTT) | `aws_mqtt_user` | Confirmado (`mqtt_handler.py:126`) |
+| Client ID (MQTT) | **Único por conexión** `mqtt-client_{accessKey}_{ts}_{rand}` (`build_client_id`) — como la app oficial; ya no `aws_mqtt_user` | ✅ Confirmado / corregido (#20) |
+| Username (MQTT) | `aws_mqtt_user` | Confirmado (`mqtt_handler.py`) |
 | Password (MQTT) | `aws_security_token` ⚠️ | Confirmado (`mqtt_handler.py:127`) |
 | Keepalive (MQTT) | 60 s (en CONNECT) | Confirmado (`mqtt_handler.py:42`) |
 | Ping WebSocket | `ping_interval=30`, `ping_timeout=10` | Confirmado (`mqtt_handler.py:144`) |
@@ -26,6 +26,8 @@
 | Protocolo MQTT | v3.1.1 (protocol level `0x04`, nombre `MQTT`) | Confirmado (`mqtt_handler.py:39-40`) |
 | QoS suscripción | 0 (byte final `0x00` en SUBSCRIBE) | Confirmado (`mqtt_handler.py:60`) |
 | Retain | No aplicable (no se publica) | Confirmado |
+| Base del topic | `aws_base_topic` (=`pro/v1/`), con fallback histórico (`build_status_topic`) | ✅ Confirmado / corregido (#5) |
+| Expiración credenciales | `aws_expires_at` (unix s); refresco proactivo antes de expirar (`aws_credentials_expired`) | ✅ Confirmado / corregido (#22) |
 
 > **Nota (Inferido):** en AWS IoT con SigV4 por WebSocket, la autenticación real va en la firma de la URL; enviar `aws_security_token` como *password* MQTT es probablemente **redundante o ignorado** por el broker. **Desconocido** si el broker lo exige.
 
@@ -58,15 +60,17 @@ Detección de tipo de paquete por **primer byte** del frame (`message.startswith
 
 | Patrón del topic | Dirección | Finalidad | Origen | Certeza |
 |---|---|---|---|---|
-| `pro/v1/get/ctl/{installation_ref}/#` | **Suscripción** | Recibir todo lo publicado bajo el controlador (incluye `.../status`) | `mqtt_handler.py:176` | Confirmado |
-| `.../status` (sufijo) | Recepción (publish del broker) | Estado de las zonas del controlador | `__init__.py:75`, `climate.py:178` | Confirmado (sufijo); ruta completa Inferida |
-| Otros bajo `pro/v1/get/ctl/{ref}/*` | Recepción | Desconocido (el callback los reenvía crudos) | `__init__.py:127-133` | Desconocido |
+| `{aws_base_topic}get/ctl/{ref}/#` (=`pro/v1/get/ctl/{ref}/#`) | **Suscripción** | Recibir todo lo publicado bajo el controlador (incluye `.../status`) | `build_status_topic` | ✅ Confirmado |
+| `pro/v1/get/ctl/{ref}/status` | Recepción (publish del broker) | Estado de las zonas del controlador | callback | ✅ Confirmado |
+| `pro/v1/get/usr/{aws_mqtt_user}/feedback` | (la app lo usa; la integración **no**) | ACK de instrucciones con `orderId` | `protocol-findings.md §6b` | ✅ Confirmado |
 
+- **Estructura del topic:** `env/version/method/type/device/property` (p. ej. `pro/v1/get/ctl/{ref}/status`). **Confirmado** (app oficial).
+- **Base:** `aws_base_topic` (=`pro/v1/`), con fallback histórico. **Confirmado**.
 - **Wildcard:** `#` (multinivel) al final de la suscripción. **Confirmado**.
 - **QoS:** 0 (sin PUBACK). **Confirmado**.
-- **Se suscribe con packet_id incremental** `i` (1-based) por instalación (`mqtt_handler.py:174`). **Confirmado**.
+- **Se suscribe con packet_id incremental** `i` (1-based) por instalación. **Confirmado**.
 
-> **Desconocido:** la ruta completa del topic de estado. El código deduce el topic del **prefijo del payload** (`(topic){...}`), no de la cabecera MQTT real. Ver §4.
+> ✅ **Resuelto** (#5): la ruta completa del topic de estado es `pro/v1/get/ctl/{ref}/status`. Nuestro parser deduce el topic del prefijo del payload (`(topic){...}`); el formato binario exacto del frame (#6) sigue pendiente de dump real.
 
 ---
 
@@ -140,9 +144,9 @@ Cualquier mensaje cuyo topic no termine en `/status` se reenvía **crudo** al ev
 
 ## 5. Correlación comando↔respuesta
 
-- **No hay correlación explícita.** Los comandos salen por **HTTP**; el estado llega por MQTT sin identificador que los enlace. **Confirmado**.
-- La reconciliación es por **estado completo**: tras un comando, el estado optimista local se sobrescribe cuando llega el siguiente `status` (provocado por el refresco de 60 s o por el propio dispositivo). **Inferido**.
-- No hay mensajes de ACK, error ni heartbeat a nivel de aplicación MQTT observados. **Desconocido** si existen.
+- **Nuestra integración no correlaciona:** los comandos salen por **HTTP** y el estado llega por MQTT sin enlazarlos. **Confirmado**.
+- **La app oficial sí correlaciona** mediante el topic `pro/v1/get/usr/{aws_mqtt_user}/feedback`, que devuelve un ACK con `orderId` por instrucción (`_sendInstruction` → `reciveInstruction_{orderId}` → `reciveStatus_{ctl}`). ✅ Confirmado. **Oportunidad**: suscribirse a feedback para confirmar comandos.
+- La reconciliación actual es por **estado completo**: tras un comando, el estado optimista local se sobrescribe cuando llega el siguiente `status` (refresco de 120 s o cambio en el dispositivo). **Inferido**.
 
 ---
 
@@ -153,7 +157,8 @@ Cualquier mensaje cuyo topic no termine en `/status` se reenvía **crudo** al ev
 | Reconexión | Bucle `_run` con `sleep(10s)` tras `on_close`/`on_error` | Confirmado |
 | Resuscripción | Al recibir CONNACK se re-suscribe a **todos** los topics | Confirmado |
 | Backoff | Fijo 10 s (sin exponencial) | Confirmado |
-| Refresco de credenciales AWS en reconexión | **Solo si** `aws_credentials` es falsy → si ya existen, se reutiliza firma potencialmente caducada | Confirmado ⚠️ |
+| Refresco de credenciales AWS en reconexión | ✅ **Corregido (#22):** en cada intento se llama `aws_credentials_expired()` (usa `aws_expires_at`) y se refresca si faltan o van a expirar | Confirmado |
+| Client ID en reconexión | ✅ **Corregido (#20):** se regenera único por conexión (`build_client_id`), evitando expulsiones | Confirmado |
 | Sesión limpia | CleanSession=1 → sin cola offline; los mensajes perdidos durante la desconexión **no se recuperan** (se compensa con el refresco periódico) | Confirmado |
 | Deduplicación | Ninguna. Cada `status` reescribe el estado; las entidades comparan valor antes de escribir (`sensor.py:84`) | Confirmado |
 | Orden de mensajes | QoS 0, sin garantía de orden; un `status` viejo podría sobrescribir uno nuevo | Inferido ⚠️ |
@@ -161,10 +166,11 @@ Cualquier mensaje cuyo topic no termine en `/status` se reenvía **crudo** al ev
 | PINGREQ/PINGRESP MQTT | No se envían; se confía en el ping del WebSocket | Confirmado |
 | Client ID compartido | Igual que el `aws_mqtt_user` que usa la app web → posible expulsión mutua si ambos conectan | Hipótesis ⚠️ |
 
-**Condiciones de carrera potenciales (Inferido):**
-1. Estado optimista de una entidad vs `status` en vuelo → parpadeo de estado.
-2. Reconexión que reutiliza firma caducada → bucle de reconexión fallida hasta que algo ponga `aws_credentials=None` (nada lo hace salvo un `refresh_aws_credentials` desde un 401 HTTP). Riesgo de **quedar desconectado indefinidamente**.
-3. `client_id` compartido con la app oficial → desconexiones mutuas.
+**Condiciones de carrera / riesgos:**
+1. Estado optimista de una entidad vs `status` en vuelo → parpadeo de estado. (Abierto, bajo impacto.)
+2. ~~Reconexión que reutiliza firma caducada → desconexión indefinida.~~ ✅ **Mitigado (#22):** `aws_credentials_expired()` refresca según `aws_expires_at`.
+3. ~~`client_id` compartido con la app oficial → desconexiones mutuas.~~ ✅ **Mitigado (#20):** `client_id` único por conexión.
+4. Frames parciales / bytes del frame (#6): el parser sigue siendo frágil (`split`/`{...}`). (Abierto, robustez.)
 
 ---
 
