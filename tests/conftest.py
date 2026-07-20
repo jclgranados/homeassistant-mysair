@@ -131,13 +131,14 @@ def status_payload():
     """Payload MQTT 'status' con value como string JSON y ';' final (como en producción).
 
     Campos (ver docs/protocol-findings.md): e=encendido, m=modo (0=AC calor),
-    tr/tc/tmm/tmx=temperaturas, hm=humedad, c/f/v/s=capacidades.
+    tr/tc/tmm/tmx=temperaturas, hum=humedad (confirmado en producción
+    2026-07-20; "hm" se mantiene como fallback), c/f/v/s=capacidades.
     """
     return {
         "ctl": "INST_A",
         "value": (
             '{"t":[{"rf":"DEV_1","n":"Salon","e":"1","m":"0",'
-            '"tr":22.5,"tc":21.0,"tmm":10.0,"tmx":30.0,"hm":45,'
+            '"tr":22.5,"tc":21.0,"tmm":10.0,"tmx":30.0,"hum":45,'
             '"vv":"0","c":"1","f":"1","v":"0","s":"0"}]};'
         ),
     }

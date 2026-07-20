@@ -224,6 +224,19 @@ def test_send_zone_command_power(fake_session, make_response):
     assert body["value"] == "0"
 
 
+def test_send_zone_command_fanspeed(fake_session, make_response):
+    fake_session.queue("post", _creado(make_response))
+    _api(fake_session).send_zone_command("INST", "DEV", "fanspeed", "4")
+    body = fake_session.calls[-1]["json"][0]
+    assert body["command"] == "fanspeed"
+    assert body["value"] == "4"
+
+
+def test_send_zone_command_fanspeed_invalid_value_raises(fake_session):
+    with pytest.raises(ValueError):
+        _api(fake_session).send_zone_command("INST", "DEV", "fanspeed", "9")
+
+
 def test_send_zone_command_invalid_mode_raises(fake_session):
     with pytest.raises(ValueError):
         _api(fake_session).send_zone_command("INST", "DEV", "mode", "5")

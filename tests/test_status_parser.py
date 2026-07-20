@@ -142,6 +142,20 @@ def test_parse_status_payload_missing_temps_are_none():
     assert zone["humidity"] is None
 
 
+def test_parse_status_payload_humidity_reads_hum_field():
+    # Campo real confirmado en producción (2026-07-20): "hum", no "hm".
+    payload = {"ctl": "X", "value": '{"t":[{"rf":"D","e":"1","m":"0","hum":"55"}]}'}
+    zone = parse_status_payload(payload)["zones"][0]
+    assert zone["humidity"] == 55.0
+
+
+def test_parse_status_payload_humidity_falls_back_to_hm_field():
+    # "hm" como fallback defensivo por si alguna variante del backend lo usa.
+    payload = {"ctl": "X", "value": '{"t":[{"rf":"D","e":"1","m":"0","hm":"40"}]}'}
+    zone = parse_status_payload(payload)["zones"][0]
+    assert zone["humidity"] == 40.0
+
+
 def test_parse_status_payload_default_power_off_when_missing_e():
     payload = {"ctl": "X", "value": '{"t":[{"rf":"D"}]}'}
     zone = parse_status_payload(payload)["zones"][0]

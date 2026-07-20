@@ -14,7 +14,7 @@ Integración **no oficial** de Home Assistant para el sistema de zonificación d
 
 | Entidad | Tipo | Descripción |
 |---|---|---|
-| `climate.<zona>` | Climate | Termostato: encendido/apagado, modo calor/frío (según disponibilidad real de la zona), temperatura objetivo, min/max reales |
+| `climate.<zona>` | Climate | Termostato: encendido/apagado, modo calor/frío (según disponibilidad real de la zona), temperatura objetivo, min/max reales, velocidad de ventilador (manual 1-3 o automático, si la zona lo soporta) |
 | `switch.<zona>` | Switch | Encendido/apagado, preservando el último modo usado |
 | `sensor.<zona>_temperatura_actual` | Sensor | Temperatura actual de la zona |
 | `sensor.<zona>_temperatura_consigna` | Sensor | Temperatura objetivo (setpoint) |
@@ -47,7 +47,7 @@ Ajustes → Dispositivos y servicios → Añadir integración → **MySair** →
 - **Las entidades tardan unos segundos en mostrar datos reales tras un arranque/recarga**: aparecen como "no disponible" hasta recibir el primer status por MQTT (y de nuevo si se pierde la conexión más de 6 minutos), en vez de mostrar valores por defecto como si fueran en tiempo real.
 - **Solo la primera `Location`** de la cuenta: si tienes varias ubicaciones, solo se cargan las instalaciones de la primera (decisión de alcance, ver `docs/known-unknowns.md` #15).
 - El **parser de frames MQTT crudos** es best-effort (no decodifica la cabecera MQTT completa); es robusto para el tráfico observado hasta ahora pero podría fallar ante formatos no vistos (`docs/known-unknowns.md` #6).
-- Sin **fan speed** ni **modo automático** todavía (protocolo parcialmente reverseado, ver `docs/protocol-findings.md`).
+- Sin **modo automático** (HVAC) todavía (protocolo parcialmente reverseado, ver `docs/protocol-findings.md`).
 - Requiere Home Assistant **≥ 2025.10.0**.
 
 ## Documentación técnica
