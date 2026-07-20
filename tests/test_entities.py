@@ -80,6 +80,8 @@ def _zone(**overrides):
         "mode_raw": "0",
         "allow_heat": True,
         "allow_cool": True,
+        "allow_fan": True,
+        "fan_mode": "4",
     }
     zone.update(overrides)
     return zone
@@ -413,3 +415,82 @@ async def test_entities_become_unavailable_after_stale_timeout(hass, monkeypatch
 
     assert hass.states.get("climate.salon").state == "unavailable"
     assert hass.states.get("switch.salon").state == "unavailable"
+
+
+# --- Velocidad de ventilador (F2, docs/protocol-findings.md §9) ---
+
+async def test_climate_fan_mode_updates_from_mqtt_event(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(allow_fan=True, fan_mode="2"))
+    await hass.async_block_till_done()
+
+    state = hass.states.get("climate.salon")
+    assert state.attributes["fan_mode"] == "2"
+    assert set(state.attributes["fan_modes"]) == {"1", "2", "3", "auto"}
+
+
+async def test_climate_fan_mode_auto_mapping(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(allow_fan=True, fan_mode="4"))
+    await hass.async_block_till_done()
+
+    assert hass.states.get("climate.salon").attributes["fan_mode"] == "auto"
+
+
+async def test_climate_fan_mode_none_when_not_allowed(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(allow_fan=False, fan_mode="2"))
+    await hass.async_block_till_done()
+
+    state = hass.states.get("climate.salon")
+    assert state.attributes["fan_modes"] == []
+
+
+async def test_climate_fan_mode_none_when_wire_is_zero(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(allow_fan=True, fan_mode="0"))
+    await hass.async_block_till_done()
+
+    assert hass.states.get("climate.salon").attributes["fan_mode"] is None
+
+
+async def test_climate_set_fan_mode_sends_command(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone(allow_fan=True, fan_mode="1"))
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "climate", "set_fan_mode",
+        {"entity_id": "climate.salon", "fan_mode": "auto"},
+        blocking=True,
+    )
+
+    assert calls[-1] == {
+        "ctl": "INST_A", "device": "DEV_1", "command_type": "fanspeed", "value": "4", "temperature": None
+    }
+    assert hass.states.get("climate.salon").attributes["fan_mode"] == "auto"
+
+
+async def test_climate_set_fan_mode_rejected_when_not_allowed(hass, monkeypatch):
+    # A diferencia de hvac_mode (que en esta versión de HA solo avisa), la
+    # validación de fan_mode sí rechaza con ServiceValidationError a nivel de
+    # servicio si fan_modes está vacío: la llamada ni siquiera llega a
+    # climate.async_set_fan_mode.
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone(allow_fan=False))
+    await hass.async_block_till_done()
+
+    with pytest.raises(Exception):
+        await hass.services.async_call(
+            "climate", "set_fan_mode",
+            {"entity_id": "climate.salon", "fan_mode": "auto"},
+            blocking=True,
+        )
+
+    assert calls == []

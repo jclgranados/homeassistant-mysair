@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("websocket")
 pytest.importorskip("requests")
 
-from mqtt_handler import build_client_id, build_status_topic, build_feedback_topic
+from mqtt_handler import build_client_id, build_status_topic, build_feedback_topic, MySairMQTTClient
 from api import MySairAPI
 
 
@@ -105,3 +105,49 @@ def test_not_expired_with_ample_time():
 def test_expired_ignores_bad_expiry_value():
     api = _api_with_creds(aws_expires_at="not-a-number")
     assert api.aws_credentials_expired() is False
+
+
+# --- _on_message: extracción de topic de un frame PUBLISH ---
+# Bug real de producción (2026-07-20): el broker no siempre envuelve el
+# topic entre paréntesis "(topic){json}" — el topic de feedback llega como
+# "topic{json}" sin paréntesis, y antes se clasificaba como "unknown",
+# rompiendo la confirmación de comandos por completo.
+
+def _publish_message(topic_plus_json: bytes) -> bytes:
+    # Fixed header + 2 bytes nulos (imitando cabecera/packet id variables,
+    # cuyo contenido _on_message ignora) + "topic{json...}".
+    return b"\x30" + b"\x00garbage\x00" + topic_plus_json
+
+
+def _client():
+    received = []
+    client = MySairMQTTClient(api=None, installation_refs=[], message_callback=received.append)
+    return client, received
+
+
+def test_on_message_extracts_topic_without_parens():
+    client, received = _client()
+    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    client._on_message(None, msg)
+
+    assert len(received) == 1
+    assert received[0]["topic"] == "pro/v1/get/usr/web0077/feedback"
+    assert received[0]["payload"] == {"orderId": "5b1ae0", "ctl": "INST_A"}
+
+
+def test_on_message_extracts_topic_with_parens():
+    client, received = _client()
+    msg = _publish_message(b'(pro/v1/get/ctl/INST_A/status{"ctl":"INST_A","value":"{}"}')
+    client._on_message(None, msg)
+
+    assert len(received) == 1
+    assert received[0]["topic"] == "pro/v1/get/ctl/INST_A/status"
+
+
+def test_on_message_no_prefix_is_unknown():
+    client, received = _client()
+    msg = _publish_message(b'{"ctl":"INST_A"}')
+    client._on_message(None, msg)
+
+    assert len(received) == 1
+    assert received[0]["topic"] == "unknown"

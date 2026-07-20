@@ -76,7 +76,7 @@
 | # | Tarea | Prio |
 |---|---|---|
 | F1 | Sensor de humedad (`hm`) y disponibilidad real de heat/cool en `climate.hvac_modes` según capacidades (`c`/`f`). | ✅ Hecho |
-| F2 | Exponer velocidad de ventilador (`fanspeed`/`vv`). **Bloqueado**: no confirmado el significado de los valores de `vv` (`known-unknowns` #24) — sí hay una pista sin confirmar en el JS (grupos `manual:["1","2","3"]` / `auto:["A"]"` de la UI, ver `protocol-findings.md §8`), pero no alcanza para implementarlo sin más investigación. | 🟢 |
+| F2 | Exponer velocidad de ventilador (`fanspeed`/`vv`). Desbloqueado: mapeo confirmado en el componente real de la app (`known-unknowns` #24, `protocol-findings.md §9`) — `vv`: `"0"`=sin modo, `"1"/"2"/"3"`=manual, `"4"`=auto. | ✅ Hecho |
 | F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | 🟢 |
 | F4 | `select` de modo reescrito y funcional. | 🟢 |
 | F5 | Servicios propios: `mysair.stop_installation` (comando `stop`, ya documentado, `value:"1"`) si aporta valor sobre apagar zona por zona. | 🟢 |

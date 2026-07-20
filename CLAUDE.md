@@ -55,7 +55,7 @@ pytest                      # ~89 tests: parser, builders MQTT, firma SigV4, cli
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 126 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad)
+docker compose run --rm test-ha    # 139 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode)
 
 # Lint / formato (recomendado: ruff; aún no configurado en el repo)
 ruff check custom_components/mysair tests
@@ -229,11 +229,12 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **Sensor de humedad y disponibilidad real de heat/cool** (F1) + **min/max temp reales** (C8) — ver `docs/execution-plan.md` Tarea 15.
 - ✅ **Confirmación de comandos vía topic `feedback`** (E7, parte 1): suscripción, evento `mysair_feedback`, log de confirmación/timeout por entidad. **Sin revertir estado todavía** — pendiente de validar el payload real en producción (#23). Ver `docs/execution-plan.md` Tarea 16.
 - ✅ **`datetime.utcnow()` obsoleto** (C6, en la firma SigV4), **`FlowResult`→`ConfigFlowResult`** (C7), y **`should_poll=False` + `available` por frescura de MQTT** (C5, todas las entidades no disponibles hasta el primer status y de nuevo si no llega nada en 360 s). Ver `docs/execution-plan.md` Tarea 17.
+- ✅ **Velocidad de ventilador** (F2): `climate.fan_mode`/`fan_modes`, comando `fanspeed`. Mapeo de `vv` confirmado en el JS (#24 resuelto — cuidado, una página de demo/storybook del mismo bundle tenía datos de ejemplo que parecían una pista pero no lo eran). Ver `docs/execution-plan.md` Tarea 18.
+- ✅ **Dos bugs reales encontrados con una captura de producción** (2026-07-20, tras probar la Tarea 18): `mqtt_handler._on_message` clasificaba como `"unknown"` cualquier topic que no viniera envuelto en paréntesis — el topic de `feedback` llega sin ellos, así que la confirmación de comandos (Tarea 16) **nunca funcionó** pese a que el ACK sí llegaba. Y `status_parser` leía el campo de humedad como `hm` cuando el real es `hum` — el sensor de humedad (F1) **nunca mostró nada**. Ambos corregidos; #6 y #23 quedan resueltos de paso. Ver `docs/execution-plan.md` Tarea 19.
 
 Pendientes:
-- 🟡 **Parser de frame MQTT frágil** (#6, requiere dump real de bytes).
-- 🟡 **Forma exacta del payload `feedback`** (#23) y **significado de `vv`/fanspeed** (#24) — ambos requieren una captura real de producción.
-- 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente).
+- 🟡 **Parser de frame MQTT robusto** (#6): decodificar la cabecera MQTT real (longitud de topic, packet id) en vez de heurísticas de texto — sigue pendiente aunque el bug concreto del topic ya se corrigió.
+- 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente; los duplicados de `feedback` vistos en producción encajan aquí).
 
 Decisiones de alcance (no son bugs):
 - **Solo primera `Location`** (#15) — soportar varias `Location` queda deliberadamente fuera de alcance.
