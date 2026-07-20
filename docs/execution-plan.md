@@ -21,7 +21,8 @@
 | 11 | Versionado + CHANGELOG (G3), retirar `quality_scale` no justificado (G4), ampliar `.gitignore` (G5) | `manifest.json`, `CHANGELOG.md`, `.gitignore` | 🟢 Baja | ✅ Hecho |
 | 12 | Tests P2 con harness real de HA vía Docker (config flow, setup/unload) | `Dockerfile.test`, `docker-compose.yml`, `tests/` | 🟠 Alta | ✅ Hecho (93 tests verdes) |
 | 13 | Tests P2 de entidades y eventos MQTT (climate/sensor/switch) | `tests/test_entities.py` | 🟡 Media | ✅ Hecho (103 tests verdes) |
-| 14 | CI GitHub Actions: pytest P0/P1, pytest P2 (Docker), hassfest (B5) | `.github/workflows/tests.yml` | 🟡 Media | ✅ Hecho (pendiente de verificar en un PR real) |
+| 14 | CI GitHub Actions: pytest P0/P1, pytest P2 (Docker), hassfest (B5) | `.github/workflows/tests.yml` | 🟡 Media | ✅ Hecho (verificado en PR #6, 3 jobs en verde) |
+| 15 | Features de protocolo: sensor de humedad, disponibilidad heat/cool, min/max temp reales (F1/C8) | `sensor.py`, `climate.py` | 🟢 Baja | ✅ Hecho (107 tests verdes) |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -115,7 +116,15 @@
 - `.github/workflows/tests.yml`, disparado en `push`/`pull_request` contra `main` y `develop` (encaja con el flujo de ramas: feature → PR contra `develop` → CI corre solo).
 - Tres jobs independientes: `pure-tests` (pytest P0/P1, Python 3.12 en el runner), `ha-harness-tests` (`docker compose run --rm test-ha`, reutiliza `Dockerfile.test` de la Tarea 12 tal cual), `hassfest` (acción oficial `home-assistant/actions/hassfest@master`, valida `manifest.json` y la estructura de `custom_components/mysair/`).
 - **`ruff` deliberadamente fuera de esta tarea:** activarlo en CI sin tenerlo configurado localmente arriesga sacar a la luz una ola de hallazgos de lint sin triar en el mismo cambio que "añadir CI" — se deja como tarea separada (config de `ruff` + limpieza del código existente antes de exigirlo en CI).
-- **No verificado en un run real de GitHub Actions todavía** (no se puede simular `hassfest` localmente) — pendiente de abrir el PR y comprobar que los tres jobs pasan antes de darlo por cerrado.
+- **Verificado en PR #6:** `hassfest` encontró dos problemas reales de `manifest.json` que ni el análisis anterior había detectado — la clave `homeassistant` no es válida en el manifest de una integración custom (solo aplica al repo core de HA), y las claves deben ir ordenadas (`domain`, `name`, alfabético). Corregidos ambos; los 3 jobs pasan en verde.
+
+### Tarea 15 — Features de protocolo: humedad, disponibilidad heat/cool, min/max temp (F1/C8)
+- `sensor.py`: nueva `MySairHumiditySensor` (`SensorDeviceClass.HUMIDITY`) por zona, leyendo `zone["humidity"]` (`hm`) — mismo patrón que los otros 3 sensores.
+- `climate.py`: `_attr_hvac_modes` deja de ser fijo `[OFF, HEAT, COOL]` a nivel de clase; se recalcula por entidad en cada `mysair_update` según `allow_heat`/`allow_cool` (`c`/`f`), siempre incluyendo `OFF`. Antes del primer status MQTT se usan los 3 modos como valor por defecto razonable.
+- `climate.py` (C8): `_attr_min_temp`/`_attr_max_temp` pasan de constantes de clase (10/30) a atributos de instancia actualizados desde `zone["temp_min"]`/`zone["temp_max"]` (`tmm`/`tmx`) cuando llegan por MQTT.
+- **Hallazgo real durante el testing:** HA (2025.1.4, la versión pinneada del harness) todavía solo **avisa** por log si se pide un `hvac_mode` fuera de `hvac_modes` de la entidad ("dejará de funcionar en 2025.4 y lanzará un error") — no lo rechaza a nivel de servicio todavía. El rechazo real lo hace nuestro propio guard en `climate.async_set_hvac_mode` (`if hvac_mode not in self._attr_hvac_modes: return`), que ya existía. Documentado por si en una versión de HA posterior a 2025.4 el comportamiento cambia a excepción dura.
+- Tests: 4 nuevos en `test_entities.py` (humedad, min/max temp dinámico, `hvac_modes` restringido, comando rechazado cuando el modo no está permitido) + `_zone()` (fixture compartida) actualizada con capacidades realistas por defecto. 107 tests verdes en total.
+- **Fuera de alcance deliberadamente:** control real de ventilador/velocidad de fan (`vv`, comando `fanspeed`) y suelo radiante — solo se expone la disponibilidad de calor/frío ya parseada, no se implementan comandos nuevos.
 
 ### Pendiente (no bloqueado, siguiente)
 - Features desde hallazgos: sensor de humedad (`hm`), ventilador (`fanspeed`/`vv`), disponibilidad heat/cool (`c`/`f`).

@@ -177,5 +177,7 @@ Config del bundle: `VUE_APP_API_DOMAIN="https://api.mysair.es"`, `VUE_APP_OUTSER
 | **Base del topic** | Hardcodea `pro/v1/get/` | 🟡 Debería venir de `aws_base_topic` (fallback al valor actual) |
 | Token HTTP `expires_at` | Refresca solo ante 401 | 🟡 Oportunidad: refresco proactivo |
 | Topic de feedback `usr/{user}/feedback` | No usado | 🟢 Oportunidad: correlación comando→ack por `orderId` |
-| Capacidades (`c/f/v/s`) y humedad (`hm`) | Parseadas, sin entidad | 🟢 Oportunidad: exponer disponibilidad heat/cool, fan, humedad |
+| Capacidades `c`/`f` (calor/frío) y humedad (`hm`) | Parseadas, sin entidad | ✅ Expuestas: `climate.hvac_modes` dinámico según `allow_heat`/`allow_cool`, sensor de humedad por zona |
+| Capacidades `v`/`s` (fan/suelo) | Parseadas, sin entidad | 🟢 Oportunidad: exponer fan/suelo (no implementado — requiere entender los comandos `fanspeed`) |
+| `tmm`/`tmx` en `climate.min_temp`/`max_temp` | Fijos en 10/30 | ✅ Corregido (C8): se actualizan desde el status MQTT por zona |
 | Comandos `fanspeed/temporizer/stop/programs` | No implementados | 🟢 Oportunidad de nuevas funcionalidades |
