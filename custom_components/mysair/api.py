@@ -325,9 +325,10 @@ class MySairAPI:
         Envía una instrucción formateada correctamente para controlar un termostato.
 
         command_type puede ser:
-            - "mode"   → enciende en calor o frío (value = "0" o "1")
-            - "temp"   → cambia temperatura (value = temperatura)
-            - "power"  → apaga (value = "0")
+            - "mode"     → enciende en calor o frío (value = "0" o "1")
+            - "temp"     → cambia temperatura (value = temperatura)
+            - "power"    → apaga (value = "0")
+            - "fanspeed" → velocidad de ventilador (value = "0".."4"; ver docs/protocol-findings.md §9)
         """
         try:
             if not ctl or not device:
@@ -349,6 +350,11 @@ class MySairAPI:
 
             elif command_type == "power":
                 payload_value = "0"
+
+            elif command_type == "fanspeed":
+                if value not in ("0", "1", "2", "3", "4"):
+                    raise ValueError("Velocidad de ventilador inválida: usa '0'..'4'.")
+                payload_value = str(value)
 
             else:
                 raise ValueError(f"Tipo de comando no soportado: {command_type}")

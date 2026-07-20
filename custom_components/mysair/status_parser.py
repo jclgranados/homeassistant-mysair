@@ -82,7 +82,11 @@ def parse_status_payload(payload):
     docs/protocol-findings.md):
       - ``e``  → ENCENDIDO: "0"=off, "1"=on, "2"=standby  (NO es el modo)
       - ``m``  → MODO 0-5: par=calor, impar=frío; {0,1,4,5}=AC, {2,3,4,5}=suelo
-      - ``tr``/``tc``/``tmm``/``tmx``/``hm`` → temp actual/consigna/min/max/humedad
+      - ``tr``/``tc``/``tmm``/``tmx``/``hum`` → temp actual/consigna/min/max/humedad
+        (``hum``, no ``hm``: corregido tras confirmarlo con una captura real de
+        producción el 2026-07-20 — la app internamente expone `this.hm`, pero
+        el campo en el JSON de la zona es `hum`. Se mantiene `hm` como
+        fallback por si alguna variante del backend lo envía así.)
       - capacidades: ``c``=permite calor, ``f``=permite frío, ``v``=fan, ``s``=suelo
 
     Cada zona en ``zones`` incluye: ``ctl``, ``zone_id``, ``zone_name``,
@@ -111,7 +115,7 @@ def parse_status_payload(payload):
                 "temp_target": _to_float(t.get("tc")),
                 "temp_min": _to_float(t.get("tmm")),
                 "temp_max": _to_float(t.get("tmx")),
-                "humidity": _to_float(t.get("hm")),
+                "humidity": _to_float(t.get("hum", t.get("hm"))),
                 "power": power,           # e crudo: "0"/"1"/"2"
                 "is_on": power != "0",    # standby ("2") también cuenta como encendido
                 "is_standby": power == "2",

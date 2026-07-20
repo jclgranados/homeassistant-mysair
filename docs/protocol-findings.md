@@ -202,3 +202,37 @@ this.$mqtt.subscribe(`usr/${this.$session.getClientId()}/feedback`,
 - **No confirmado con captura real de producción** (`known-unknowns.md` #23): se implementó de forma defensiva (`status_parser.parse_feedback_payload` prueba primero la forma plana y cae a una forma anidada tipo `status` como fallback) para no romper si el backend envuelve este topic de otra manera.
 - `VUE_APP_OUTSERVICE_MILISECOND="5000"` (config del bundle) es el timeout que usa la propia app para dar un comando por perdido — reutilizado tal cual como `FEEDBACK_TIMEOUT_SECONDS` en la integración.
 - **Implementado:** suscripción al topic (`mqtt_handler.build_feedback_topic`), evento `mysair_feedback` en el bus (`__init__.py`), y en `climate.py`/`switch.py` (vía `command_feedback.CommandFeedbackMixin`) log de confirmación si llega el ACK con el `orderId` esperado, o log de aviso si no llega en 5 s. **No se revierte el estado optimista todavía** — eso queda pendiente de validar la forma real del payload en producción (ver `execution-plan.md` Tarea 16).
+
+---
+
+## 9. Velocidad de ventilador: significado de `vv`/`fanspeed` (CONFIRMADO)
+
+```js
+// Componente REAL de una instalación (no la página de demo/storybook de
+// componentes UI, que usa datos ficticios de ejemplo — ver más abajo):
+data(){return{type:"device",
+  fanGroups:[{key:"auto",values:{4:"A"}},{key:"manual",values:{1:"1",2:"2",3:"3"}}],
+  ...}}
+
+hasFanMode(){return"0"!=this.vv}
+getFanMode(){return this.vv}
+
+// Click en el icono principal del ventilador (sin elegir grupo):
+updateFanMode:function(e){
+  this.status.setFanMode(e),
+  this.setFanspeed(this.installation_ref,this.reference,e,e=>dd(e))
+}
+// onClick del icono principal (toggle): e.updateFanMode(e.status.hasFanMode()?"0":"4")
+```
+
+| `vv` | Significado |
+|---|---|
+| `"0"` | Sin modo de ventilador (`hasFanMode()` → `false`) |
+| `"1"` / `"2"` / `"3"` | Velocidad manual 1 / 2 / 3 |
+| `"4"` | Automático (mostrado como "A" en la UI) |
+
+**⚠️ Trampa encontrada durante la investigación:** una página de demo/storybook de componentes UI en el mismo bundle define un `ventilationGroups:[{key:"",values:["A"]},{key:"manual",values:["1","2","3"]}]` con datos de ejemplo **inventados para mostrar el componente visualmente**, no ligados a ningún `vv` real. Una primera lectura superficial de esa página llevó a anotar esto como "pista sin confirmar" en `known-unknowns.md` #24 — la confirmación real vino de encontrar el componente de instalación de verdad (arriba), que sí liga `fanGroups` directamente a `this.vv` vía `getFanMode()`/`hasFanMode()`. Lección: en bundles con páginas de demo de componentes, verificar siempre que el código citado pertenece al flujo real de datos (aquí: el objeto `status`/`te`, el mismo de `docs/protocol-findings.md §4`), no a una demo aislada con valores de relleno.
+
+- **Comando:** `command:"fanspeed"`, `value:""+i` (string del valor de `vv` deseado: `"0"`, `"1"`, `"2"`, `"3"` o `"4"`).
+- **Capacidad:** solo se muestra el control si `allowFan()` (`"1"==this.v`) — ya parseado como `allow_fan` en `status_parser.py`.
+- **Implementado:** `climate.py` expone `fan_mode`/`fan_modes` (HA `ClimateEntityFeature.FAN_MODE`) mapeando `"1"/"2"/"3"` tal cual y `"4"`↔`"auto"`; `async_set_fan_mode` envía `fanspeed` vía `api.send_zone_command`.

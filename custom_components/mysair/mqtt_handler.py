@@ -257,10 +257,14 @@ class MySairMQTTClient:
                     json_part = decoded[start:end]
                     data = json.loads(json_part)
 
-                    # Intentar obtener el topic del prefijo (si está)
-                    topic = "unknown"
-                    if decoded.startswith("(") and "{" in decoded:
-                        topic = decoded[1:decoded.find("{")].strip(" )")
+                    # Extraer el topic del prefijo. Confirmado en producción
+                    # (2026-07-20) que el broker no siempre envuelve el topic
+                    # entre paréntesis: a veces es "(topic){json}", a veces
+                    # "topic{json}" sin paréntesis (p. ej. el topic de
+                    # feedback). Antes solo se reconocía la forma con
+                    # paréntesis, dejando el resto como "unknown" — rompía
+                    # por completo la confirmación de comandos vía feedback.
+                    topic = decoded[:start].strip(" ()") if start > 0 else "unknown"
 
                     if self.message_callback:
                         self.message_callback({"topic": topic, "payload": data})

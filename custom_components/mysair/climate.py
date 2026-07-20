@@ -14,6 +14,13 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+# Velocidad de ventilador (comando/campo "fanspeed"/"vv"): mapeo confirmado
+# desde el componente real de la app oficial (ver docs/protocol-findings.md §9).
+FAN_MODE_AUTO = "auto"
+_FAN_MODE_WIRE_TO_HA = {"1": "1", "2": "2", "3": "3", "4": FAN_MODE_AUTO}
+_FAN_MODE_HA_TO_WIRE = {v: k for k, v in _FAN_MODE_WIRE_TO_HA.items()}
+_FAN_MODES = ["1", "2", "3", FAN_MODE_AUTO]
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Configura los termostatos MySair."""
@@ -39,6 +46,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.TURN_ON
         | ClimateEntityFeature.TURN_OFF
+        | ClimateEntityFeature.FAN_MODE
     )
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
 
@@ -58,6 +66,8 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
         self._attr_min_temp = 10
         self._attr_max_temp = 30
+        self._fan_mode = None
+        self._attr_fan_modes = []
         self._unsub = None
         self._init_command_feedback()
         self._init_availability()
@@ -99,6 +109,10 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
     @property
     def target_temperature(self):
         return self._target_temperature
+
+    @property
+    def fan_mode(self):
+        return self._fan_mode
 
     # ------------------------------------------------------------------
     # MÉTODOS DE CONTROL (usando send_zone_command)
@@ -173,6 +187,27 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         except Exception as e:
             _LOGGER.error(f"[MySair Climate] ❌ Error al cambiar modo HVAC: {e}")
 
+    async def async_set_fan_mode(self, fan_mode):
+        if fan_mode not in self._attr_fan_modes:
+            _LOGGER.warning(f"[MySair Climate] ❌ Velocidad de ventilador inválida: {fan_mode}")
+            return
+
+        wire_value = _FAN_MODE_HA_TO_WIRE.get(fan_mode, fan_mode)
+        _LOGGER.info(f"[MySair Climate] 🌀 Cambiando velocidad de ventilador a {fan_mode} en {self.name}")
+        try:
+            response = await self.hass.async_add_executor_job(
+                self.api.send_zone_command,
+                self.inst_ref,
+                self.device_id,
+                "fanspeed",
+                wire_value,
+            )
+            self._track_command_confirmation(response)
+            self._fan_mode = fan_mode
+            self.async_write_ha_state()
+        except Exception as e:
+            _LOGGER.error(f"[MySair Climate] ❌ Error al cambiar velocidad de ventilador: {e}")
+
     async def async_turn_off(self):
         await self.async_set_hvac_mode(HVACMode.OFF)
 
@@ -218,6 +253,10 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
             if zone.get("allow_cool"):
                 modes.append(HVACMode.COOL)
             self._attr_hvac_modes = modes
+
+            # Velocidad de ventilador (vv/fanspeed, ver docs/protocol-findings.md §9).
+            self._attr_fan_modes = list(_FAN_MODES) if zone.get("allow_fan") else []
+            self._fan_mode = _FAN_MODE_WIRE_TO_HA.get(zone.get("fan_mode"))
 
             # 'e' = encendido (on/off/standby); calor/frío = paridad de 'm'.
             # Ver docs/protocol-findings.md.

@@ -6,6 +6,19 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-07-20
+
+### Fixed
+- La confirmación de comandos vía `feedback` (2.2.0) no funcionaba nunca: el topic se identificaba mal cuando el broker lo enviaba sin paréntesis alrededor (el caso real de `feedback`), así que la rama que procesa el ACK nunca se ejecutaba.
+- El sensor de humedad (2.1.0) no mostraba nunca ningún valor: el campo real en el status es `hum`, no `hm`.
+
+Ambos encontrados con una captura de logs real de producción compartida por el usuario tras probar un cambio de temperatura.
+
+## [2.4.0] - 2026-07-20
+
+### Added
+- Control de velocidad de ventilador en `climate` (`fan_mode`/`fan_modes`): manual 1/2/3 o automático, solo en las zonas que lo soportan.
+
 ## [2.3.0] - 2026-07-20
 
 ### Added
