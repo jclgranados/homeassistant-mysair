@@ -12,7 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 class MySairAPI:
     """Cliente API para Mysair."""
 
-    def __init__(self, email: str, password: str):
+    def __init__(self, email: str, password: str, session: "requests.Session | None" = None):
         self.email = email
         self.password = password
         self.base_url = "https://api.mysair.es/v1"
@@ -21,6 +21,8 @@ class MySairAPI:
         self.entity = None
         self.aws_credentials = None
         self.lock = Lock()
+        # Sesión inyectable: facilita el mockeo en tests (ver docs/testing-strategy.md).
+        self.session = session or requests.Session()
 
     # ==========================================================
     # 🔐 LOGIN
@@ -29,7 +31,7 @@ class MySairAPI:
         """Autenticación inicial con la API Mysair."""
         try:
             _LOGGER.info(f"[MySairAPI] 🔐 Login {self.email}")
-            resp = requests.post(
+            resp = self.session.post(
                 f"{self.base_url}/user/login",
                 json={"email": self.email, "password": self.password},
                 timeout=15,
@@ -64,7 +66,7 @@ class MySairAPI:
                 return False
 
             _LOGGER.info("[MySairAPI] 🔄 Renovando tokens de sesión...")
-            resp = requests.put(
+            resp = self.session.put(
                 f"{self.base_url}/user/refreshtokens",
                 json={"refresh_token": self.refresh_token_value},
                 timeout=10,
@@ -96,7 +98,7 @@ class MySairAPI:
         try:
             _LOGGER.info("[MySairAPI] ☁️ Solicitando credenciales AWS MQTT...")
             headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = requests.put(f"{self.base_url}/user/refreshawscredentials", headers=headers, timeout=15)
+            resp = self.session.put(f"{self.base_url}/user/refreshawscredentials", headers=headers, timeout=15)
 
             if resp.status_code != 200:
                 raise Exception(f"AWS credentials error: {resp.status_code} {resp.text}")
@@ -142,7 +144,7 @@ class MySairAPI:
         try:
             _LOGGER.info("[MySairAPI] 📍 Locations...")
             headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = requests.get(f"{self.base_url}/locations", headers=headers, timeout=10)
+            resp = self.session.get(f"{self.base_url}/locations", headers=headers, timeout=10)
 
             if resp.status_code != 200:
                 raise Exception(f"Locations error: {resp.status_code} {resp.text}")
@@ -157,7 +159,7 @@ class MySairAPI:
         try:
             _LOGGER.info(f"[MySairAPI] 🔧 Installations loc={location_id}")
             headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = requests.get(
+            resp = self.session.get(
                 f"{self.base_url}/installations?location_id={location_id}&validated=1",
                 headers=headers,
                 timeout=10,
@@ -174,7 +176,7 @@ class MySairAPI:
         try:
             _LOGGER.info(f"[MySairAPI] 📟 Devices ref={installation_ref}")
             headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = requests.get(
+            resp = self.session.get(
                 f"{self.base_url}/devices?installation_ref={installation_ref}",
                 headers=headers,
                 timeout=10,
@@ -197,7 +199,7 @@ class MySairAPI:
             _LOGGER.info(f"[MySairAPI] 📤 Enviando instrucción: {instruction}")
             headers = {"Authorization": f"Bearer {self.access_token}"}
 
-            resp = requests.post(
+            resp = self.session.post(
                 f"{self.base_url}/send/instruction", headers=headers, json=instruction, timeout=10
             )
 
@@ -208,7 +210,7 @@ class MySairAPI:
                     _LOGGER.info("[MySairAPI] 🔄 Token HTTP renovado, actualizando credenciales AWS...")
                     self.refresh_aws_credentials()
                     headers = {"Authorization": f"Bearer {self.access_token}"}
-                    resp = requests.post(
+                    resp = self.session.post(
                         f"{self.base_url}/send/instruction", headers=headers, json=instruction, timeout=10
                     )
 

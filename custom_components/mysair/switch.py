@@ -37,6 +37,9 @@ class MySairSwitch(SwitchEntity):
         self._attr_unique_id = f"mysair_switch_{inst_ref}_{device_id}"
         self._attr_name = name
         self._is_on = False
+        # Último modo AC conocido para encender preservándolo: "0"=calor, "1"=frío.
+        # Por defecto calor (encender NUNCA debe forzar frío). Ver docs/protocol-findings.md.
+        self._last_ac_mode = "0"
         self._unsub = None
 
     @property
@@ -55,13 +58,15 @@ class MySairSwitch(SwitchEntity):
 
     async def async_turn_on(self, **kwargs):
         try:
-            _LOGGER.info(f"[MySair Switch] 🔛 Encendiendo {self.name}")
+            # Encender = enviar comando 'mode' (no existe power "1"). Preservamos el
+            # último modo calor/frío conocido; por defecto calor. Ver docs/protocol-findings.md.
+            _LOGGER.info(f"[MySair Switch] 🔛 Encendiendo {self.name} (modo {self._last_ac_mode})")
             await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,
                 self.device_id,
                 "mode",
-                "1",
+                self._last_ac_mode,
                 22.0
             )
             self._is_on = True
@@ -103,8 +108,10 @@ class MySairSwitch(SwitchEntity):
         for zone in data.get("zones", []):
             if zone.get("zone_id") != self.device_id:
                 continue
-            mode = zone.get("mode")
-            self._is_on = mode in [1, 2]
+            self._is_on = bool(zone.get("is_on"))
+            # Recordar el modo AC (calor/frío) para preservarlo al reencender.
+            if zone.get("is_ac") and zone.get("mode_raw") in ("0", "1"):
+                self._last_ac_mode = zone.get("mode_raw")
             _LOGGER.debug(f"[MySair Switch] 🔄 Estado {self.name}: {'ON' if self._is_on else 'OFF'}")
             self.async_write_ha_state()
 
