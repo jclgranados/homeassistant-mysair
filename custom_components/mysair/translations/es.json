@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MySair",
+        "description": "Inicia sesión con las credenciales de tu cuenta MySair.",
+        "data": {
+          "email": "Correo electrónico",
+          "password": "Contraseña"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reautenticar MySair",
+        "description": "La sesión de {email} ha caducado o ya no es válida. Introduce tu contraseña de nuevo para continuar.",
+        "data": {
+          "password": "Contraseña"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Correo electrónico o contraseña incorrectos.",
+      "cannot_connect": "No se pudo conectar con MySair. Inténtalo de nuevo más tarde.",
+      "unknown": "Error inesperado."
+    },
+    "abort": {
+      "already_configured": "Esta cuenta ya está configurada.",
+      "reauth_successful": "Reautenticación completada correctamente."
+    }
+  },
+  "services": {
+    "stop_installation": {
+      "name": "Detener instalación",
+      "description": "Detiene una instalación MySair completa (todas sus zonas de golpe), usando el comando \"stop\" del backend. Distinto de apagar cada zona por separado con el switch o el climate.",
+      "fields": {
+        "installation_ref": {
+          "name": "Referencia de instalación",
+          "description": "Referencia (ctl) de la instalación a detener, tal como aparece entre paréntesis en el nombre del dispositivo de sus entidades (por ejemplo \"MYS94B97E0C9177FB6\")."
+        }
+      }
+    }
+  }
+}

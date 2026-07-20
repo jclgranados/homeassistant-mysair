@@ -95,6 +95,8 @@ Los tests y la documentación están en la raíz del repo.
 | `const.py` | Constantes (algunas sin uso: `HVAC_MODES` con `auto`, `SCAN_INTERVAL`) |
 | `diagnostics.py` | Volcado de diagnóstico descargable desde la UI de HA, redactando credenciales/tokens (D1) |
 | `services.yaml` | Esquema de UI del servicio `mysair.stop_installation` (F5) |
+| `strings.json` | Textos del config flow y del servicio en inglés (referencia/fallback de HA) (C4) |
+| `translations/es.json` | Traducción al español del config flow y del servicio (C4) |
 | `manifest.json` | Manifiesto (`requirements`: solo `requests` y `websocket-client`) |
 
 | Raíz del repo | Rol |
@@ -239,10 +241,12 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **E3 (backoff con jitter):** `mqtt_handler.compute_backoff_delay` sustituye la espera fija de 10 s por un backoff exponencial (tope 120 s) con jitter ±20%; se resetea al reconectar con éxito. Los reconectes planificados (refresco de credenciales) siguen sin esperar. Ver Tarea 22.
 - ✅ **D1 (diagnostics.py):** volcado descargable desde la UI de HA con instalaciones, devices y estado del cliente MQTT, redactando tokens/credenciales AWS. Ver Tarea 22.
 - ✅ **F5 (servicio `mysair.stop_installation`):** detiene una instalación completa con un comando en vez de apagar zona por zona; registrado una vez por dominio y retirado al descargar la última entrada. Ver Tarea 22.
+- ✅ **C4 (traducciones):** `strings.json` (inglés, referencia/fallback) + `translations/es.json` para el config flow (pasos, errores, abort) y el servicio `mysair.stop_installation`. Alcance deliberado: no incluye nombres de entidad (`climate`/`sensor`/`switch` siguen hardcodeados en español) — migrarlos a `has_entity_name`/`translation_key` cambiaría el nombre visible de entidades ya instaladas, se descartó por el riesgo frente al valor. Ver Tarea 23.
 
 Pendientes:
 - 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente; los duplicados de `feedback` vistos en producción encajan aquí).
 - 🟡 **Campos de zona sin mapear** (`vf`, `hmh`, `mh`, `p`, `ps`, `sv`): búsqueda exhaustiva en el bundle JS sin encontrar referencias — quedan sin interpretar por la regla de no inventar campos (ver `docs/known-unknowns.md`).
+- 🟡 **`quality_scale: silver`** sigue retirado del manifiesto: aunque C4 cubre las traducciones, falta el icono de marca en `home-assistant/brands` (PR a un repo externo) para que reclamarlo esté justificado por el propio criterio del proyecto (ver `docs/execution-plan.md` Tarea 11/23).
 
 Decisiones de alcance (no son bugs):
 - **Solo primera `Location`** (#15) — soportar varias `Location` queda deliberadamente fuera de alcance.
