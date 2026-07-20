@@ -198,12 +198,15 @@ class MySairModeSensor(SensorEntity):
         for zone in data.get("zones", []):
             if zone.get("zone_id") != self.device_id:
                 continue
-            mode = zone.get("mode")
+            # 'e' = encendido; calor/frío = paridad de 'm'. Ver docs/protocol-findings.md.
             new_state = "OFF"
-            if mode == 1:
-                new_state = "HEAT"
-            elif mode == 2:
-                new_state = "COOL"
+            if zone.get("is_on"):
+                if zone.get("is_cool"):
+                    new_state = "COOL"
+                elif zone.get("is_heat"):
+                    new_state = "HEAT"
+                else:
+                    new_state = "ON"
             if new_state != self._state:
                 self._state = new_state
                 _LOGGER.debug(f"[MySair Sensor] 🔄 {self._attr_name}: {self._state}")

@@ -188,19 +188,28 @@ class MySairThermostat(ClimateEntity):
                 continue
 
             _LOGGER.debug(f"[MySair Climate] 📨 Evento recibido para {self._attr_name}")
-            self._current_temperature = zone.get("temp_actual")
-            self._target_temperature = zone.get("temp_target")
+            if zone.get("temp_actual") is not None:
+                self._current_temperature = zone.get("temp_actual")
+            if zone.get("temp_target") is not None:
+                self._target_temperature = zone.get("temp_target")
 
-            mode = zone.get("mode")
-            if mode == 1:
-                self._hvac_mode = HVACMode.HEAT
-                self._hvac_action = HVACAction.HEATING
-            elif mode == 2:
-                self._hvac_mode = HVACMode.COOL
-                self._hvac_action = HVACAction.COOLING
-            else:
+            # 'e' = encendido (on/off/standby); calor/frío = paridad de 'm'.
+            # Ver docs/protocol-findings.md.
+            if not zone.get("is_on"):
                 self._hvac_mode = HVACMode.OFF
                 self._hvac_action = HVACAction.OFF
+            else:
+                if zone.get("is_cool"):
+                    self._hvac_mode = HVACMode.COOL
+                elif zone.get("is_heat"):
+                    self._hvac_mode = HVACMode.HEAT
+
+                if zone.get("is_standby"):
+                    self._hvac_action = HVACAction.IDLE
+                elif zone.get("is_cool"):
+                    self._hvac_action = HVACAction.COOLING
+                elif zone.get("is_heat"):
+                    self._hvac_action = HVACAction.HEATING
 
             _LOGGER.debug(
                 f"[MySair Climate] 🔄 {self._attr_name}: {self._current_temperature}°C / "
