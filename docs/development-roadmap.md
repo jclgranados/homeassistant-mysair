@@ -15,7 +15,7 @@
 | A4 | **Limpiar `requirements`:** dejar `requests` y `websocket-client==1.8.0`; quitar `aiohttp`, `paho-mqtt`, `boto3`. Eliminar el preload de paho. | ✅ Hecho | `manifest.json` |
 | A5 | **Resolver la codificación de modo** (bloqueante — ver `known-unknowns` #1,#2,#4) y arreglar `switch.async_turn_on` que enciende siempre en "frío". | ✅ Hecho | `status_parser.py`, `switch.py` |
 | A6 | **No guardar `password` en claro / tokens no usados** (ver `security-and-privacy` §3). | ✅ Hecho | `config_flow.py`, `api.py`, `__init__.py` |
-| A7 | **Refresco proactivo de credenciales AWS** en reconexión MQTT (hoy reutiliza firma caducada). | ✅ Hecho | `mqtt_handler.py`, `api.py` |
+| A7 | **Refresco proactivo de credenciales AWS** en reconexión MQTT (hoy reutiliza firma caducada). | ✅ Hecho — reforzado (2026-07-20): además de refrescar al reconectar, ahora se refresca **antes de que la conexión se caiga**, como hace la app oficial (`setTimeout`). Causa raíz confirmada de desconexiones "sistemáticas" en producción. | `mqtt_handler.py`, `api.py` |
 
 ---
 

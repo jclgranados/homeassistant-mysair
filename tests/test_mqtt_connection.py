@@ -10,6 +10,7 @@ import pytest
 pytest.importorskip("websocket")
 pytest.importorskip("requests")
 
+import mqtt_handler
 from mqtt_handler import build_client_id, build_status_topic, build_feedback_topic, MySairMQTTClient
 from api import MySairAPI
 
@@ -107,6 +108,40 @@ def test_expired_ignores_bad_expiry_value():
     assert api.aws_credentials_expired() is False
 
 
+# --- seconds_until_aws_credentials_expire (refresco proactivo de conexión) ---
+
+def test_seconds_until_expire_none_without_credentials():
+    api = MySairAPI("e", "p")
+    api.aws_credentials = None
+    assert api.seconds_until_aws_credentials_expire() is None
+
+
+def test_seconds_until_expire_none_without_expiry_info():
+    api = _api_with_creds()
+    assert api.seconds_until_aws_credentials_expire() is None
+
+
+def test_seconds_until_expire_computes_remaining_time():
+    api = _api_with_creds(aws_expires_at=time.time() + 660)
+    # 660s hasta expirar - 60s de margen = ~600s
+    assert 590 <= api.seconds_until_aws_credentials_expire() <= 600
+
+
+def test_seconds_until_expire_zero_when_within_margin():
+    api = _api_with_creds(aws_expires_at=time.time() + 30)
+    assert api.seconds_until_aws_credentials_expire() == 0
+
+
+def test_seconds_until_expire_zero_when_already_past():
+    api = _api_with_creds(aws_expires_at=time.time() - 100)
+    assert api.seconds_until_aws_credentials_expire() == 0
+
+
+def test_seconds_until_expire_ignores_bad_value():
+    api = _api_with_creds(aws_expires_at="not-a-number")
+    assert api.seconds_until_aws_credentials_expire() is None
+
+
 # --- _on_message: extracción de topic de un frame PUBLISH ---
 # Bug real de producción (2026-07-20): el broker no siempre envuelve el
 # topic entre paréntesis "(topic){json}" — el topic de feedback llega como
@@ -151,3 +186,90 @@ def test_on_message_no_prefix_is_unknown():
 
     assert len(received) == 1
     assert received[0]["topic"] == "unknown"
+
+
+# --- Refresco proactivo de conexión (evita que AWS corte primero) ---
+
+class _FakeTimer:
+    """Doble de threading.Timer: no arranca hilos reales ni espera de verdad."""
+
+    instances = []
+
+    def __init__(self, delay, func):
+        self.delay = delay
+        self.func = func
+        self.started = False
+        self.cancelled = False
+        self.daemon = False
+        _FakeTimer.instances.append(self)
+
+    def start(self):
+        self.started = True
+
+    def cancel(self):
+        self.cancelled = True
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_timers(monkeypatch):
+    _FakeTimer.instances = []
+    monkeypatch.setattr(mqtt_handler.threading, "Timer", _FakeTimer)
+    yield
+
+
+def _client_with_creds(**extra):
+    api = MySairAPI("e", "p")
+    api.aws_credentials = {"aws_mqtt_user": "web0000", **extra}
+    return MySairMQTTClient(api=api, installation_refs=[], message_callback=lambda data: None)
+
+
+def test_schedule_credential_refresh_timer_creates_timer():
+    client = _client_with_creds(aws_expires_at=time.time() + 660)
+    client._schedule_credential_refresh_timer()
+
+    assert len(_FakeTimer.instances) == 1
+    timer = _FakeTimer.instances[0]
+    assert timer.started is True
+    assert 590 <= timer.delay <= 600
+
+
+def test_schedule_credential_refresh_timer_noop_without_expiry_info():
+    client = _client_with_creds()  # sin aws_expires_at
+    client._schedule_credential_refresh_timer()
+
+    assert _FakeTimer.instances == []
+    assert client._credential_refresh_timer is None
+
+
+def test_schedule_credential_refresh_timer_cancels_previous():
+    client = _client_with_creds(aws_expires_at=time.time() + 660)
+    client._schedule_credential_refresh_timer()
+    first_timer = _FakeTimer.instances[0]
+
+    client._schedule_credential_refresh_timer()
+
+    assert first_timer.cancelled is True
+    assert len(_FakeTimer.instances) == 2
+    assert client._credential_refresh_timer is _FakeTimer.instances[1]
+
+
+def test_cancel_credential_refresh_timer_clears_state():
+    client = _client_with_creds(aws_expires_at=time.time() + 660)
+    client._schedule_credential_refresh_timer()
+    timer = client._credential_refresh_timer
+
+    client._cancel_credential_refresh_timer()
+
+    assert timer.cancelled is True
+    assert client._credential_refresh_timer is None
+
+
+def test_on_credential_refresh_due_marks_planned_reconnect_and_closes_ws():
+    client = _client_with_creds()
+    closed = []
+    client.ws = type("FakeWs", (), {"close": lambda self: closed.append(True)})()
+
+    client._on_credential_refresh_due()
+
+    assert client._planned_reconnect is True
+    assert closed == [True]
