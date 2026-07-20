@@ -1,1 +1,28 @@
+# Python
 __pycache__
+*.pyc
+*.pyo
+.venv
+.venv-test
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+
+# Nunca versionar secretos ni capturas de tráfico/protocolo
+.env
+.env.*
+secrets.*
+*.har
+*.pcap
+*.pcapng
+*.mitm
+scratchpad/

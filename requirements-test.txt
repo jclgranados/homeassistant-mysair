@@ -1,0 +1,11 @@
+# Dependencias para los tests que NO requieren Home Assistant (P0/P1).
+# Ejecutar: pip install -r requirements-test.txt && pytest
+pytest>=7.4
+requests>=2.31.0
+websocket-client==1.8.0
+freezegun>=1.2
+
+# Para los tests con harness de Home Assistant (pendientes de reestructurar el
+# repo a custom_components/mysair/, ver docs/execution-plan.md Tarea 5):
+# homeassistant
+# pytest-homeassistant-custom-component

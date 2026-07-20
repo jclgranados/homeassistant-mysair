@@ -1,7 +1,7 @@
 {
   "domain": "mysair",
   "name": "MySair",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "documentation": "https://github.com/jclgranados/homeassistant-mysair",
   "issue_tracker": "https://github.com/jclgranados/homeassistant-mysair/issues",
   "config_flow": true,
@@ -10,13 +10,9 @@
   "iot_class": "cloud_push",
   "integration_type": "hub",
   "requirements": [
-    "aiohttp>=3.9.0",
-    "paho-mqtt>=1.6.1",
     "requests>=2.31.0",
-    "boto3>=1.34.0",
     "websocket-client==1.8.0"
   ],
-  "quality_scale": "silver",
   "loggers": ["mysair"],
   "homeassistant": "2025.10.0"
 }
