@@ -192,8 +192,11 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **Codificación de estado:** `e`=encendido, modo=paridad de `m` (antes se leía `e` como modo). Ver `docs/protocol-findings.md`.
 - ✅ **`switch.turn_on`:** ya no fuerza frío; enciende con `mode` preservando el último modo (por defecto calor).
 - ✅ **`requirements`:** solo `requests` + `websocket-client`.
+- ✅ **`client_id` MQTT único** por conexión (#20; antes `aws_mqtt_user` → expulsiones con la app).
+- ✅ **Refresco de credenciales AWS por `aws_expires_at`** en cada reconexión (#22; antes reutilizaba firma caducada).
+- ✅ **Topic desde `aws_base_topic`** con fallback (#5); log de conexión ya no filtra la URL firmada.
 
-Pendientes (requieren validación, ver `docs/known-unknowns.md`):
-- 🟠 **Reconexión MQTT reutiliza credenciales/firma caducadas** (`mqtt_handler.py`, refresca solo si `aws_credentials` es falsy) — #22.
-- 🟠 **`password` en claro** en la config entry (`config_flow.py`) — A6.
-- 🟠 **`client_id` compartido** con la app oficial → posibles expulsiones — #20.
+Pendientes:
+- 🟠 **`password` en claro** en la config entry (`config_flow.py`) — A6/C3 (reauth).
+- 🟡 **Parser de frame MQTT frágil** (#6, requiere dump real de bytes).
+- 🟡 **Solo primera `Location`** (#15, multi-location).

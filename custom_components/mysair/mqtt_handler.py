@@ -3,6 +3,7 @@ import json
 import hmac
 import hashlib
 import struct
+import secrets
 import datetime
 import logging
 import threading
@@ -63,6 +64,31 @@ def build_mqtt_subscribe(packet_id, topic):
     return fixed_header + variable_header + payload
 
 
+def build_client_id(access_key):
+    """clientId MQTT único por conexión, siguiendo el patrón de la app oficial.
+
+    La app usa ``mqtt-client_<accessKey>_<Date.now()>``. Añadimos un sufijo
+    aleatorio para garantizar unicidad aunque dos intentos caigan en el mismo
+    milisegundo. Evita colisiones con la app u otras conexiones que usen el
+    mismo aws_mqtt_user (AWS IoT expulsa clientIds duplicados). Ver
+    docs/protocol-findings.md §6b.
+    """
+    return f"mqtt-client_{access_key}_{int(time.time() * 1000)}_{secrets.token_hex(3)}"
+
+
+def build_status_topic(base_topic, ref):
+    """Topic de suscripción de estado para un controlador.
+
+    Estructura confirmada: ``{aws_base_topic}get/ctl/{ref}/#`` donde
+    aws_base_topic suele ser ``pro/v1/``. Si no se conoce, se usa el valor
+    por defecto histórico. Ver docs/protocol-findings.md §6b.
+    """
+    base = base_topic or "pro/v1/"
+    if not base.endswith("/"):
+        base += "/"
+    return f"{base}get/ctl/{ref}/#"
+
+
 # ==========================================================
 # 🌐 Cliente principal MySair MQTT
 # ==========================================================
@@ -78,6 +104,7 @@ class MySairMQTTClient:
         self._reconnect_delay = 10
         self.ws = None
         self.connected = False
+        self._base_topic = None  # aws_base_topic, se fija al conectar
 
     # ----------------------------------------------------------
     # 🔗 Conexión principal
@@ -106,8 +133,10 @@ class MySairMQTTClient:
     def _run(self):
         while not self.stop_event.is_set():
             try:
-                # Obtener credenciales AWS actualizadas
-                if not self.api.aws_credentials:
+                # Refrescar credenciales AWS si faltan o están por expirar
+                # (aws_expires_at). Se hace en CADA intento de conexión para no
+                # reutilizar una firma caducada tras una desconexión larga.
+                if self.api.aws_credentials_expired():
                     self.api.refresh_aws_credentials()
 
                 aws = self.api.aws_credentials
@@ -122,13 +151,16 @@ class MySairMQTTClient:
                 access_key = aws.get("accessKeyId") or aws.get("aws_access_key_id")
                 secret_key = aws.get("secretAccessKey") or aws.get("aws_secret_access_key")
                 token = aws.get("sessionToken") or aws.get("aws_security_token")
-                client_id = aws.get("aws_mqtt_user")
+                # clientId único por conexión (no aws_mqtt_user) para evitar
+                # expulsiones mutuas con la app oficial. Ver docs/protocol-findings.md.
+                client_id = build_client_id(access_key)
                 username = aws.get("aws_mqtt_user")
                 password = aws.get("aws_security_token")
+                self._base_topic = aws.get("aws_base_topic")
 
-                # Generar URL firmada
+                # Generar URL firmada (no se loguea: contiene la firma AWS)
                 signed_url = self.api.aws_sign_url(host, region, access_key, secret_key, token)
-                log(f"🔗 [MySair MQTT] Conectando a {signed_url[:120]}... como {client_id}")
+                log(f"🔗 [MySair MQTT] Conectando a {host} como {client_id}")
 
                 # Configurar cliente WebSocket
                 headers = {"Sec-WebSocket-Protocol": "mqtt"}
@@ -172,7 +204,7 @@ class MySairMQTTClient:
                 log("✅ [MySair MQTT] CONNACK recibido, suscribiendo a topics...")
                 self.connected = True
                 for i, ref in enumerate(self.installation_refs, start=1):
-                    topic = f"pro/v1/get/ctl/{ref}/#"
+                    topic = build_status_topic(self._base_topic, ref)
                     pkt = build_mqtt_subscribe(i, topic)
                     ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
                     log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {topic}")
