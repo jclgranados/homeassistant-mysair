@@ -63,6 +63,7 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         return self._is_on
 
     async def async_turn_on(self, **kwargs):
+        previous_is_on = self._is_on
         try:
             # Encender = enviar comando 'mode' (no existe power "1"). Preservamos el
             # último modo calor/frío conocido; por defecto calor. Ver docs/protocol-findings.md.
@@ -75,13 +76,18 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
                 self._last_ac_mode,
                 22.0
             )
-            self._track_command_confirmation(response)
+
+            def _revert(previous=previous_is_on):
+                self._is_on = previous
+
+            self._track_command_confirmation(response, revert_fn=_revert)
             self._is_on = True
             self.async_write_ha_state()
         except Exception as e:
             _LOGGER.error(f"[MySair Switch] ❌ Error al encender {self.name}: {e}")
 
     async def async_turn_off(self, **kwargs):
+        previous_is_on = self._is_on
         try:
             _LOGGER.info(f"[MySair Switch] ⛔ Apagando {self.name}")
             response = await self.hass.async_add_executor_job(
@@ -90,7 +96,11 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
                 self.device_id,
                 "power"
             )
-            self._track_command_confirmation(response)
+
+            def _revert(previous=previous_is_on):
+                self._is_on = previous
+
+            self._track_command_confirmation(response, revert_fn=_revert)
             self._is_on = False
             self.async_write_ha_state()
         except Exception as e:
@@ -120,6 +130,7 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
             if zone.get("zone_id") != self.device_id:
                 continue
             self._mark_status_received()
+            self._clear_pending_command()
             self._is_on = bool(zone.get("is_on"))
             # Recordar el modo AC (calor/frío) para preservarlo al reencender.
             if zone.get("is_ac") and zone.get("mode_raw") in ("0", "1"):

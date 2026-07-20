@@ -526,3 +526,115 @@ async def test_climate_set_fan_mode_rejected_when_not_allowed(hass, monkeypatch)
         )
 
     assert calls == []
+
+
+# --- E7 parte 2: revertir estado optimista si no llega confirmación ---
+
+async def test_climate_hvac_mode_reverts_on_timeout(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone(is_on=True, is_heat=True, is_cool=False, mode_raw="0"))
+    await hass.async_block_till_done()
+    assert hass.states.get("climate.salon").state == HVACMode.HEAT
+
+    await hass.services.async_call(
+        "climate", "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "cool"},
+        blocking=True,
+    )
+    assert hass.states.get("climate.salon").state == HVACMode.COOL  # optimista
+
+    future = dt_util.utcnow() + timedelta(seconds=FEEDBACK_TIMEOUT_SECONDS + 1)
+    async_fire_time_changed(hass, future)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("climate.salon").state == HVACMode.HEAT  # revertido
+
+
+async def test_climate_temperature_reverts_on_timeout(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone(temp_target=22.0))
+    await hass.async_block_till_done()
+    assert hass.states.get("climate.salon").attributes["temperature"] == 22.0
+
+    await hass.services.async_call(
+        "climate", "set_temperature",
+        {"entity_id": "climate.salon", "temperature": 26.0},
+        blocking=True,
+    )
+    assert hass.states.get("climate.salon").attributes["temperature"] == 26.0
+
+    future = dt_util.utcnow() + timedelta(seconds=FEEDBACK_TIMEOUT_SECONDS + 1)
+    async_fire_time_changed(hass, future)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("climate.salon").attributes["temperature"] == 22.0
+
+
+async def test_climate_fan_mode_reverts_on_timeout(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone(allow_fan=True, fan_mode="1"))
+    await hass.async_block_till_done()
+    assert hass.states.get("climate.salon").attributes["fan_mode"] == "1"
+
+    await hass.services.async_call(
+        "climate", "set_fan_mode",
+        {"entity_id": "climate.salon", "fan_mode": "auto"},
+        blocking=True,
+    )
+    assert hass.states.get("climate.salon").attributes["fan_mode"] == "auto"
+
+    future = dt_util.utcnow() + timedelta(seconds=FEEDBACK_TIMEOUT_SECONDS + 1)
+    async_fire_time_changed(hass, future)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("climate.salon").attributes["fan_mode"] == "1"
+
+
+async def test_switch_reverts_on_timeout(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone(is_on=False))
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.salon").state == "off"
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.salon"}, blocking=True
+    )
+    assert hass.states.get("switch.salon").state == "on"
+
+    future = dt_util.utcnow() + timedelta(seconds=FEEDBACK_TIMEOUT_SECONDS + 1)
+    async_fire_time_changed(hass, future)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("switch.salon").state == "off"
+
+
+async def test_climate_pending_revert_cleared_by_real_status(hass, monkeypatch):
+    # Si llega un status real antes del timeout, se descarta el revert
+    # pendiente: el dato fresco manda, no hay que volver a un valor viejo.
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone(is_on=True, is_heat=True, is_cool=False, mode_raw="0"))
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "climate", "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "cool"},
+        blocking=True,
+    )
+    assert hass.states.get("climate.salon").state == HVACMode.COOL
+
+    # Llega un status real confirmando el cambio (verdad fresca).
+    _fire_status(hass, "INST_A", _zone(is_on=True, is_heat=False, is_cool=True, mode_raw="1"))
+    await hass.async_block_till_done()
+    assert hass.states.get("climate.salon").state == HVACMode.COOL
+
+    future = dt_util.utcnow() + timedelta(seconds=FEEDBACK_TIMEOUT_SECONDS + 1)
+    async_fire_time_changed(hass, future)
+    await hass.async_block_till_done()
+
+    # Sigue en COOL: no se revierte, el pending ya se limpió con el status real.
+    assert hass.states.get("climate.salon").state == HVACMode.COOL
