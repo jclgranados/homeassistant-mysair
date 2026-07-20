@@ -35,6 +35,95 @@ def encode_varint(x):
     return encoded
 
 
+def decode_varint(data, offset=0):
+    """Decodifica un entero de longitud variable estilo MQTT (remaining length).
+
+    Inverso de ``encode_varint``. Devuelve ``(valor, nueva_posición)``, o
+    ``(None, offset)`` si los bytes disponibles no forman un varint válido
+    (incompleto o de más de 4 bytes, el máximo permitido por MQTT 3.1.1).
+    """
+    multiplier = 1
+    value = 0
+    pos = offset
+    while True:
+        if pos >= len(data):
+            return None, offset
+        byte = data[pos]
+        value += (byte & 0x7F) * multiplier
+        pos += 1
+        if not (byte & 0x80):
+            break
+        multiplier *= 128
+        if multiplier > 128 ** 3:
+            return None, offset
+    return value, pos
+
+
+def parse_mqtt_publish(message):
+    """Decodifica un frame PUBLISH MQTT real: cabecera fija + Topic Name + payload.
+
+    Confirmado por inferencia cruzada de varias capturas reales de producción
+    (2026-07-20, ver docs/known-unknowns.md #6): el "carácter fantasma" que
+    aparecía antes del topic en los logs (un ``(`` para topics de 40
+    caracteres, nada visible para uno de 31) no era parte del topic ni un
+    envoltorio de la app — es el byte bajo del campo de longitud de 2 bytes
+    (big-endian) que precede al Topic Name en cualquier PUBLISH MQTT estándar,
+    que solo resulta visible como texto cuando coincide con un carácter ASCII
+    imprimible. Nuestras suscripciones piden QoS 0 (``build_mqtt_subscribe``),
+    así que el PUBLISH no lleva Packet Identifier.
+
+    Devuelve ``(topic, payload_bytes)``, o ``(None, None)`` si el mensaje no
+    tiene la forma esperada — el llamador debe caer entonces a la heurística
+    de texto (``_on_message``), ya que no hay certeza total sobre casos límite
+    sin una captura de bytes en crudo.
+    """
+    if not message or (message[0] & 0xF0) != 0x30:
+        return None, None
+
+    remaining_length, pos = decode_varint(message, 1)
+    if remaining_length is None:
+        return None, None
+
+    if len(message) < pos + 2:
+        return None, None
+    topic_len = struct.unpack("!H", message[pos:pos + 2])[0]
+    pos += 2
+
+    if len(message) < pos + topic_len:
+        return None, None
+    try:
+        topic = message[pos:pos + topic_len].decode("utf-8")
+    except UnicodeDecodeError:
+        return None, None
+    pos += topic_len
+
+    if not topic or "{" in topic or not topic.isprintable():
+        return None, None  # sanity check: no confiar en un topic con pinta rara
+
+    qos = (message[0] >> 1) & 0x03
+    if qos > 0:
+        if len(message) < pos + 2:
+            return None, None
+        pos += 2  # Packet Identifier, no se usa (nuestras suscripciones piden QoS 0)
+
+    return topic, message[pos:]
+
+
+def _extract_json(text):
+    """Extrae y parsea el primer objeto JSON `{...}` de un texto.
+
+    Usado tanto por el método estricto como por el heurístico de fallback en
+    ``_on_message``. Devuelve ``(data, start)``, donde ``start`` es la
+    posición del primer ``{`` (útil para el heurístico, que la usa para
+    deducir el topic del prefijo).
+    """
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start == -1 or end == 0:
+        raise ValueError("No se encontró JSON válido en el mensaje recibido.")
+    return json.loads(text[start:end]), start
+
+
 def build_mqtt_connect(client_id, username, password):
     """Construye el paquete CONNECT MQTT."""
     protocol_name = b"\x00\x04MQTT"
@@ -291,27 +380,27 @@ class MySairMQTTClient:
             # Mensaje de tipo PUBLISH
             if message.startswith(b"\x30"):
                 try:
-                    payload = message.split(b"\x00", 2)[-1]
-                    decoded = payload.decode("utf-8", errors="ignore").strip()
-                    log(f"📥 [MySair MQTT] Mensaje MQTT recibido: {decoded[:200]}...")
+                    # Método primario: decodificación conforme al estándar
+                    # MQTT (ver parse_mqtt_publish, known-unknowns #6). Si no
+                    # es concluyente (mensaje con forma inesperada), cae a la
+                    # heurística de texto anterior como red de seguridad.
+                    strict_topic, strict_payload = parse_mqtt_publish(message)
 
-                    # 🩹 Extraer solo la parte JSON
-                    start = decoded.find("{")
-                    end = decoded.rfind("}") + 1
-                    if start == -1 or end == 0:
-                        raise ValueError("No se encontró JSON válido en el mensaje recibido.")
+                    if strict_topic is not None:
+                        decoded = strict_payload.decode("utf-8", errors="ignore").strip()
+                        data, _ = _extract_json(decoded)
+                        topic = strict_topic
+                    else:
+                        payload = message.split(b"\x00", 2)[-1]
+                        decoded = payload.decode("utf-8", errors="ignore").strip()
+                        data, start = _extract_json(decoded)
+                        # Confirmado en producción (2026-07-20) que el broker
+                        # no siempre envuelve el topic entre paréntesis: a
+                        # veces es "(topic){json}", a veces "topic{json}" sin
+                        # paréntesis (p. ej. el topic de feedback).
+                        topic = decoded[:start].strip(" ()") if start > 0 else "unknown"
 
-                    json_part = decoded[start:end]
-                    data = json.loads(json_part)
-
-                    # Extraer el topic del prefijo. Confirmado en producción
-                    # (2026-07-20) que el broker no siempre envuelve el topic
-                    # entre paréntesis: a veces es "(topic){json}", a veces
-                    # "topic{json}" sin paréntesis (p. ej. el topic de
-                    # feedback). Antes solo se reconocía la forma con
-                    # paréntesis, dejando el resto como "unknown" — rompía
-                    # por completo la confirmación de comandos vía feedback.
-                    topic = decoded[:start].strip(" ()") if start > 0 else "unknown"
+                    log(f"📥 [MySair MQTT] Mensaje MQTT recibido ({topic}): {decoded[:200]}...")
 
                     if self.message_callback:
                         self.message_callback({"topic": topic, "payload": data})

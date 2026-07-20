@@ -10,8 +10,19 @@ import pytest
 pytest.importorskip("websocket")
 pytest.importorskip("requests")
 
+import struct
+
 import mqtt_handler
-from mqtt_handler import build_client_id, build_status_topic, build_feedback_topic, MySairMQTTClient
+from mqtt_handler import (
+    build_client_id,
+    build_status_topic,
+    build_feedback_topic,
+    build_mqtt_subscribe,
+    decode_varint,
+    encode_varint,
+    parse_mqtt_publish,
+    MySairMQTTClient,
+)
 from api import MySairAPI
 
 
@@ -186,6 +197,114 @@ def test_on_message_no_prefix_is_unknown():
 
     assert len(received) == 1
     assert received[0]["topic"] == "unknown"
+
+
+# --- decode_varint / parse_mqtt_publish (E1, known-unknowns #6) ---
+#
+# Confirmado por inferencia cruzada de capturas reales: el topic de status
+# ("...status", 40 caracteres) mostraba un "(" delante en los logs porque
+# chr(40) == '(' — es el byte bajo del campo de longitud MQTT estándar de
+# 2 bytes que precede al Topic Name, no un envoltorio de la app. El topic de
+# feedback (31 caracteres, chr(31) no imprimible) no mostraba nada visible.
+# Estos tests construyen frames PUBLISH sintéticos pero conformes al
+# estándar MQTT 3.1.1 para verificar el decodificador contra esa evidencia.
+
+def _build_publish_frame(topic: str, payload: bytes, qos: int = 0, packet_id: int = 1) -> bytes:
+    topic_bytes = topic.encode("utf-8")
+    variable_header = struct.pack("!H", len(topic_bytes)) + topic_bytes
+    if qos > 0:
+        variable_header += struct.pack("!H", packet_id)
+    remaining = variable_header + payload
+    fixed_header_byte = 0x30 | ((qos & 0x03) << 1)
+    return bytes([fixed_header_byte]) + encode_varint(len(remaining)) + remaining
+
+
+def test_decode_varint_roundtrip_with_encode_varint():
+    for n in (0, 1, 127, 128, 16383, 16384, 2097151):
+        encoded = encode_varint(n)
+        value, pos = decode_varint(encoded)
+        assert value == n
+        assert pos == len(encoded)
+
+
+def test_decode_varint_incomplete_returns_none():
+    value, pos = decode_varint(b"\x80")  # bit de continuación sin más bytes
+    assert value is None
+    assert pos == 0
+
+
+def test_parse_mqtt_publish_status_topic_matches_real_capture_length():
+    # 40 caracteres: el mismo largo que hacía aparecer un "(" fantasma en los logs.
+    topic = "pro/v1/get/ctl/MYS94B97E0C9177FB6/status"
+    assert len(topic) == 40
+    payload = b'{"ctl":"MYS94B97E0C9177FB6","value":"{}"}'
+    frame = _build_publish_frame(topic, payload, qos=0)
+
+    parsed_topic, parsed_payload = parse_mqtt_publish(frame)
+
+    assert parsed_topic == topic
+    assert parsed_payload == payload
+
+
+def test_parse_mqtt_publish_feedback_topic_matches_real_capture_length():
+    # 31 caracteres: el largo que no mostraba ningún carácter fantasma visible.
+    topic = "pro/v1/get/usr/web0077/feedback"
+    assert len(topic) == 31
+    payload = b'{"orderId":"5b1ae0","ctl":"INST_A"}'
+    frame = _build_publish_frame(topic, payload, qos=0)
+
+    parsed_topic, parsed_payload = parse_mqtt_publish(frame)
+
+    assert parsed_topic == topic
+    assert parsed_payload == payload
+
+
+def test_parse_mqtt_publish_qos1_skips_packet_identifier():
+    topic = "pro/v1/get/ctl/INST_A/status"
+    payload = b'{"ctl":"INST_A"}'
+    frame = _build_publish_frame(topic, payload, qos=1, packet_id=42)
+
+    parsed_topic, parsed_payload = parse_mqtt_publish(frame)
+
+    assert parsed_topic == topic
+    assert parsed_payload == payload
+
+
+def test_parse_mqtt_publish_rejects_non_publish_frame():
+    assert parse_mqtt_publish(b"\x20\x02\x00\x00") == (None, None)  # CONNACK
+
+
+def test_parse_mqtt_publish_rejects_truncated_frame():
+    assert parse_mqtt_publish(b"\x30\x10\x00\x28pro/v1") == (None, None)
+
+
+def test_parse_mqtt_publish_rejects_empty_message():
+    assert parse_mqtt_publish(b"") == (None, None)
+
+
+def test_on_message_uses_strict_parser_for_well_formed_frame():
+    client, received = _client()
+    topic = "pro/v1/get/usr/web0077/feedback"
+    payload = b'{"orderId":"5b1ae0","ctl":"INST_A"}'
+    frame = _build_publish_frame(topic, payload, qos=0)
+
+    client._on_message(None, frame)
+
+    assert len(received) == 1
+    assert received[0]["topic"] == topic
+    assert received[0]["payload"] == {"orderId": "5b1ae0", "ctl": "INST_A"}
+
+
+def test_on_message_falls_back_when_strict_parse_inconclusive():
+    # Mismos mensajes "a mano" que test_on_message_extracts_topic_without_parens:
+    # no son un frame MQTT válido, así que deben seguir resolviéndose por la
+    # heurística de texto (comportamiento sin cambios para estos casos).
+    client, received = _client()
+    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    client._on_message(None, msg)
+
+    assert len(received) == 1
+    assert received[0]["topic"] == "pro/v1/get/usr/web0077/feedback"
 
 
 # --- Refresco proactivo de conexión (evita que AWS corte primero) ---

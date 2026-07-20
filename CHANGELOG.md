@@ -6,6 +6,12 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-20
+
+### Added
+- Si un comando (temperatura, modo, ventilador, encendido/apagado) no se confirma por MQTT a tiempo, se revierte el estado optimista al último valor conocido en vez de quedarse mostrando algo que quizá no llegó a aplicarse.
+- Parser de frames MQTT conforme al estándar (topic decodificado desde la cabecera real en vez de heurísticas de texto), con la heurística anterior como respaldo si el frame no tiene la forma esperada.
+
 ## [2.4.2] - 2026-07-20
 
 ### Fixed
