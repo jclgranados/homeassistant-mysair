@@ -1,17 +1,20 @@
 import asyncio
 import logging
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 
 from .api import MySairAPI, MySairAuthError, MySairConnectionError
 from .mqtt_handler import MySairMQTTClient
 from .status_parser import parse_status_payload, parse_feedback_payload
-from .const import DOMAIN
+from .const import DOMAIN, SERVICE_STOP_INSTALLATION, ATTR_INSTALLATION_REF
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["climate", "sensor", "switch"]
+
+STOP_INSTALLATION_SCHEMA = vol.Schema({vol.Required(ATTR_INSTALLATION_REF): str})
 
 
 @callback
@@ -154,15 +157,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         while True:
             try:
                 for ref in installation_refs:
-                    instruction = [{
-                        "sender": "WEB",
-                        "ctl": ref,
-                        "app": api.aws_credentials.get("aws_mqtt_user", "web0077") if api.aws_credentials else "web0077",
-                        "device": "",
-                        "command": "status",
-                        "value": "sync",
-                    }]
-                    await hass.async_add_executor_job(api.send_instruction, instruction)
+                    await hass.async_add_executor_job(api.send_installation_command, ref, "status")
                     _LOGGER.debug(f"[MySair] 🔁 Solicitud de estado enviada a instalación {ref}")
             except Exception as e:
                 _LOGGER.warning(f"[MySair] ⚠️ Error al enviar instrucción de estado: {e}")
@@ -173,6 +168,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     entry.async_create_background_task(
         hass, refresh_status_periodic(), name="mysair_status_refresh"
     )
+
+    # --- SERVICIO mysair.stop_installation (F5) ---
+    # Compartido por todas las config entries del dominio: se registra una
+    # sola vez y se retira cuando se descarga la última entrada.
+    if not hass.services.has_service(DOMAIN, SERVICE_STOP_INSTALLATION):
+        async def _async_handle_stop_installation(call: ServiceCall) -> None:
+            installation_ref = call.data[ATTR_INSTALLATION_REF]
+            for entry_data in hass.data.get(DOMAIN, {}).values():
+                if installation_ref in entry_data.get("installations", []):
+                    try:
+                        await hass.async_add_executor_job(
+                            entry_data["api"].send_installation_command, installation_ref, "stop"
+                        )
+                    except Exception as e:
+                        raise HomeAssistantError(
+                            f"Error al detener la instalación {installation_ref}: {e}"
+                        ) from e
+                    return
+            raise ServiceValidationError(
+                f"Instalación '{installation_ref}' no encontrada en ninguna cuenta MySair configurada."
+            )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_STOP_INSTALLATION,
+            _async_handle_stop_installation,
+            schema=STOP_INSTALLATION_SCHEMA,
+        )
 
     return True
 
@@ -194,6 +217,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             mqtt_client = data.get("mqtt")
             if mqtt_client:
                 await hass.async_add_executor_job(mqtt_client.stop)
+        # Servicio compartido por todas las entradas: se retira solo cuando
+        # se descarga la última (F5).
+        if not hass.data[DOMAIN]:
+            hass.services.async_remove(DOMAIN, SERVICE_STOP_INSTALLATION)
 
     return unload_ok
 

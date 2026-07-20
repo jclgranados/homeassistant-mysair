@@ -22,3 +22,7 @@ HVAC_MODES = ["off", "heat", "cool", "auto"]
 # Intervalos por defecto
 SCAN_INTERVAL = 60  # segundos
 
+# Servicio mysair.stop_installation (F5)
+SERVICE_STOP_INSTALLATION = "stop_installation"
+ATTR_INSTALLATION_REF = "installation_ref"
+

@@ -6,6 +6,13 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-07-20
+
+### Added
+- Servicio `mysair.stop_installation`: detiene una instalación completa (todas sus zonas) con un solo comando, en vez de apagar zona por zona.
+- `diagnostics.py`: volcado descargable desde la UI de Home Assistant con el estado de la integración (instalaciones, dispositivos, estado del cliente MQTT) para depuración, redactando credenciales y tokens.
+- Backoff exponencial con jitter en la reconexión MQTT (antes una espera fija de 10 s); los reconectes planificados por refresco de credenciales siguen sin esperar.
+
 ## [2.5.0] - 2026-07-20
 
 ### Added
