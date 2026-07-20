@@ -14,11 +14,12 @@ Integración **no oficial** de Home Assistant para el sistema de zonificación d
 
 | Entidad | Tipo | Descripción |
 |---|---|---|
-| `climate.<zona>` | Climate | Termostato: encendido/apagado, modo calor/frío, temperatura objetivo |
+| `climate.<zona>` | Climate | Termostato: encendido/apagado, modo calor/frío (según disponibilidad real de la zona), temperatura objetivo, min/max reales |
 | `switch.<zona>` | Switch | Encendido/apagado, preservando el último modo usado |
-| `sensor.<zona>_temperatura` | Sensor | Temperatura actual de la zona |
-| `sensor.<zona>_consigna` | Sensor | Temperatura objetivo (setpoint) |
-| `sensor.<zona>_modo` | Sensor | Modo actual (`off`/`heat`/`cool`) |
+| `sensor.<zona>_temperatura_actual` | Sensor | Temperatura actual de la zona |
+| `sensor.<zona>_temperatura_consigna` | Sensor | Temperatura objetivo (setpoint) |
+| `sensor.<zona>_modo` | Sensor | Modo actual (`OFF`/`HEAT`/`COOL`) |
+| `sensor.<zona>_humedad` | Sensor | Humedad relativa de la zona |
 
 ## Instalación
 
@@ -43,6 +44,7 @@ Ajustes → Dispositivos y servicios → Añadir integración → **MySair** →
 
 ## Limitaciones conocidas
 
+- **Las entidades tardan unos segundos en mostrar datos reales tras un arranque/recarga**: aparecen como "no disponible" hasta recibir el primer status por MQTT (y de nuevo si se pierde la conexión más de 6 minutos), en vez de mostrar valores por defecto como si fueran en tiempo real.
 - **Solo la primera `Location`** de la cuenta: si tienes varias ubicaciones, solo se cargan las instalaciones de la primera (decisión de alcance, ver `docs/known-unknowns.md` #15).
 - El **parser de frames MQTT crudos** es best-effort (no decodifica la cabecera MQTT completa); es robusto para el tráfico observado hasta ahora pero podría fallar ante formatos no vistos (`docs/known-unknowns.md` #6).
 - Sin **fan speed** ni **modo automático** todavía (protocolo parcialmente reverseado, ver `docs/protocol-findings.md`).
@@ -54,12 +56,18 @@ Para arquitectura, protocolo HTTP/MQTT, modelo de dominio, estrategia de tests y
 
 ## Desarrollo y contribuciones
 
-El repositorio no tiene entorno de HA para tests completos todavía; los tests P0/P1 (parser, builders MQTT, firma SigV4, cliente HTTP) corren sin HA:
+Tests P0/P1 (parser, builders MQTT, firma SigV4, cliente HTTP) corren sin Home Assistant:
 
 ```bash
 python -m venv .venv-test && source .venv-test/bin/activate
 pip install -r requirements-test.txt
 pytest
+```
+
+Tests P2 (config flow, setup/unload) usan un harness real de Home Assistant, vía Docker — no instala nada en tu máquina:
+
+```bash
+docker compose run --rm test-ha
 ```
 
 Issues y pull requests son bienvenidos. Revisa `CLAUDE.md` antes de tocar el protocolo o las credenciales.

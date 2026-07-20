@@ -129,3 +129,33 @@ def parse_status_payload(payload):
         )
 
     return {"ctl": ctl_ref, "zones": zone_states}
+
+
+def parse_feedback_payload(payload):
+    """Normaliza el payload del topic ``.../usr/{aws_mqtt_user}/feedback``.
+
+    Confirmado desde la app oficial (ver docs/protocol-findings.md §8): el ACK
+    de una instrucción se recibe como ``{orderId, ctl, ...}`` plano sobre el
+    mismo objeto que entrega el wrapper MQTT (mismo shape que ``payload`` en
+    ``mqtt_handler._on_message``). No hay captura real de producción que lo
+    confirme (`known-unknowns` #23), así que además se prueba, como
+    alternativa defensiva, la forma anidada de ``status`` (``value`` como
+    string JSON) por si el backend envuelve también este topic así.
+
+    Devuelve ``{"order_id", "ctl", "raw"}``; ``order_id``/``ctl`` son ``None``
+    si no se encuentran en ninguna de las dos formas.
+    """
+    if not isinstance(payload, dict):
+        return {"order_id": None, "ctl": None, "raw": payload}
+
+    order_id = payload.get("orderId")
+    ctl = payload.get("ctl")
+
+    if order_id is None or ctl is None:
+        nested = parse_status_value(payload.get("value", ""))
+        if order_id is None:
+            order_id = nested.get("orderId")
+        if ctl is None:
+            ctl = nested.get("ctl", payload.get("ctl"))
+
+    return {"order_id": order_id, "ctl": ctl, "raw": payload}

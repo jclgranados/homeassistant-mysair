@@ -6,6 +6,32 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-20
+
+### Added
+- Todas las entidades pasan a "no disponible" si no reciben un status MQTT en más de 6 minutos (antes mostraban indefinidamente el último dato conocido, o valores por defecto antes del primer status).
+- `should_poll = False` explícito en todas las entidades (integración 100% push, sin polling de HA).
+
+### Fixed
+- `datetime.utcnow()` (obsoleto) → `datetime.now(timezone.utc)` en la firma AWS SigV4.
+- `FlowResult` genérico → `ConfigFlowResult` en el config flow (tipo correcto para HA moderno).
+
+## [2.2.0] - 2026-07-20
+
+### Added
+- Confirmación de comandos vía el topic MQTT `.../usr/{aws_mqtt_user}/feedback`: cada comando enviado por `climate`/`switch` se correlaciona con su `orderId`, y se registra en el log si llega confirmación o si no llega en 5 s. No revierte el estado optimista todavía (pendiente de validar el payload real en producción).
+
+## [2.1.0] - 2026-07-20
+
+### Added
+- Sensor de humedad por zona (`sensor.<zona>_humedad`).
+- `climate.hvac_modes` refleja la disponibilidad real de calor/frío de cada zona (campos `c`/`f`) en vez de ofrecer siempre los tres modos.
+- `climate.min_temp`/`max_temp` se actualizan con los límites reales de la zona (`tmm`/`tmx`) en vez de usar 10/30 fijos.
+- Tests P2 con harness real de Home Assistant vía Docker (config flow, setup/unload, entidades) y CI en GitHub Actions (`pytest` + `hassfest`).
+
+### Fixed
+- `manifest.json`: eliminada la clave `homeassistant` (no válida para integraciones custom) y claves reordenadas — detectado por `hassfest` en CI.
+
 ## [2.0.0] - 2026-07-20
 
 ### ⚠️ Incompatible con instalaciones previas (manual, no HACS)

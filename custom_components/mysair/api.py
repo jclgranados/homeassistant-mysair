@@ -18,6 +18,23 @@ class MySairConnectionError(Exception):
     """Fallo de red o del backend, no relacionado con las credenciales."""
 
 
+def extract_order_id(response):
+    """Extrae el ``orderId`` de la respuesta de ``POST /send/instruction``.
+
+    Confirmado desde la app oficial (ver docs/protocol-findings.md §8):
+    ``entity.value[0].orderId``. Devuelve ``None`` si la forma no coincide
+    (respuesta inesperada) en vez de lanzar, ya que solo se usa para
+    correlacionar con el ACK MQTT — no es crítico para que el comando en sí
+    haya funcionado.
+    """
+    if not isinstance(response, dict):
+        return None
+    try:
+        return response["entity"]["value"][0].get("orderId")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
+
+
 class MySairAPI:
     """Cliente API para Mysair."""
 
@@ -361,7 +378,7 @@ class MySairAPI:
         method = "GET"
         service = "iotdevicegateway"
         algorithm = "AWS4-HMAC-SHA256"
-        t = datetime.datetime.utcnow()
+        t = datetime.datetime.now(datetime.timezone.utc)
         amz_date = t.strftime("%Y%m%dT%H%M%SZ")
         date_stamp = t.strftime("%Y%m%d")
         credential_scope = f"{date_stamp}/{region}/{service}/aws4_request"

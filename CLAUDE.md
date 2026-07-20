@@ -31,8 +31,12 @@ MQTT (mqtt_handler.py) recibe .../status
    → hass.bus.async_fire("mysair_update", {topic, data})
    → cada entidad escucha, filtra por ctl+zone_id, actualiza estado
 
-Comando de entidad → api.send_zone_command → POST /send/instruction
+Comando de entidad → api.send_zone_command → POST /send/instruction (devuelve orderId)
    → backend reenvía al dispositivo → estado vuelve por MQTT (reconciliación)
+   → ACK vuelve por MQTT en .../usr/{aws_mqtt_user}/feedback (orderId, ctl)
+   → hass.bus.async_fire("mysair_feedback", {order_id, ctl, raw})
+   → CommandFeedbackMixin (command_feedback.py, climate.py/switch.py) loguea
+     confirmación, o aviso si no llega en FEEDBACK_TIMEOUT_SECONDS (5 s)
 ```
 
 Detalle completo: `docs/architecture.md`. **Los comandos van por HTTP, el estado por MQTT.**
@@ -41,13 +45,17 @@ Detalle completo: `docs/architecture.md`. **Los comandos van por HTTP, el estado
 
 ## 3. Comandos
 
-Este repo **no tiene** entorno, tests, lint ni CI configurados todavía. Convenciones recomendadas (aún no presentes):
+Lint y CI todavía no están configurados. Tests, sí, en dos niveles:
 
 ```bash
-# Tests P0/P1 (NO requieren Home Assistant): se ejecutan tal cual
+# Tests P0/P1 (NO requieren Home Assistant, Python 3.9+, en la máquina local)
 python -m venv .venv-test && source .venv-test/bin/activate
 pip install -r requirements-test.txt
-pytest                      # 42 tests: parser, builders MQTT, firma SigV4, cliente HTTP
+pytest                      # ~89 tests: parser, builders MQTT, firma SigV4, cliente HTTP
+                             # (los ficheros P2 se saltan aquí vía pytest.importorskip)
+
+# Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
+docker compose run --rm test-ha    # 126 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad)
 
 # Lint / formato (recomendado: ruff; aún no configurado en el repo)
 ruff check custom_components/mysair tests
@@ -57,9 +65,11 @@ ruff format custom_components/mysair tests
 - Los tests **puros** (parser, builders MQTT, firma SigV4, `MySairAPI` con `session` inyectada)
   corren sin HA porque `tests/conftest.py` añade `custom_components/mysair` a `sys.path` e importa
   esos módulos como top-level (no ejecutan el `__init__.py` del paquete).
-- Los tests con **harness de HA** (config flow, setup/unload, entidades) están pendientes:
-  requieren `homeassistant` + `pytest-homeassistant-custom-component` (Python ≥3.12). Ver
-  `docs/testing-strategy.md` y `docs/execution-plan.md`.
+- Los tests con **harness de HA** (`test_config_flow.py`, `test_init_setup_unload.py`,
+  `test_entities.py`) requieren `homeassistant` + `pytest-homeassistant-custom-component`
+  (Python ≥3.12), instalados solo dentro de `Dockerfile.test` — no en el entorno local. PyPI no
+  publica `homeassistant` más reciente que `2025.1.4` (techo conocido del ecosistema, no de este
+  repo). Ver `docs/testing-strategy.md`.
 
 > ⚠️ **Nunca** ejecutes el código contra servidores reales de MySair para "probar".
 
@@ -74,10 +84,12 @@ Los tests y la documentación están en la raíz del repo.
 |---|---|
 | `__init__.py` | Setup/unload, callback MQTT, refresco periódico. `async_unload_entry` a nivel de módulo |
 | `api.py` | `MySairAPI`: HTTP síncrono (`requests`, `session` inyectable) + firma AWS SigV4 |
-| `status_parser.py` | Parser **puro** del payload `status` (`parse_status_payload`), sin dependencia de HA |
+| `status_parser.py` | Parsers **puros** de `status` (`parse_status_payload`) y `feedback` (`parse_feedback_payload`), sin dependencia de HA |
 | `mqtt_handler.py` | `MySairMQTTClient`: MQTT crudo sobre WebSocket (`websocket-client`) |
+| `command_feedback.py` | `CommandFeedbackMixin`: correlación de comandos con el ACK de `mysair_feedback` (climate/switch) |
+| `availability.py` | `AvailabilityMixin`: `should_poll=False` + `available` según frescura del último status MQTT (todas las entidades) |
 | `climate.py` | `MySairThermostat` (ClimateEntity) |
-| `sensor.py` | 3 sensores por zona (temp actual, consigna, modo) |
+| `sensor.py` | 4 sensores por zona (temp actual, consigna, modo, humedad) |
 | `switch.py` | `MySairSwitch` (power on/off) |
 | `config_flow.py` | Config flow (email + password) |
 | `const.py` | Constantes (algunas sin uso: `HVAC_MODES` con `auto`, `SCAN_INTERVAL`) |
@@ -135,10 +147,11 @@ Los tests y la documentación están en la raíz del repo.
 4. Estado optimista opcional + reconciliación por MQTT. Documentar el `value` en `docs/mysair-http-api.md`.
 
 ### Añadir soporte para un mensaje MQTT
-1. El parsing vive en `mqtt_message_callback` (`__init__.py:67`). Hoy solo procesa `.../status` leyendo `payload["value"]` (string JSON) → `t[]`.
-2. Para un topic/tipo nuevo: añadir una rama según sufijo de topic, parsear y emitir en `mysair_update` con una estructura `data` normalizada.
-3. Actualizar las entidades que deban consumirlo y documentar el topic/payload en `docs/mysair-mqtt-protocol.md`.
-4. Recuerda: el frame se recibe en `mqtt_handler._on_message` (`mqtt_handler.py:167`) — parsing frágil por `split`/`{...}`.
+1. El parsing vive en `mqtt_message_callback` (`__init__.py`). Hoy procesa `.../status` (→ `mysair_update`) y `.../feedback` (→ `mysair_feedback`, ver `status_parser.parse_feedback_payload`).
+2. Para un topic/tipo nuevo: añadir una rama según sufijo de topic, parsear y emitir en su propio evento (no reutilices `mysair_update`/`mysair_feedback` para algo distinto) con una estructura `data` normalizada.
+3. Si hace falta suscribirse a un topic nuevo (no solo procesar uno que ya llega): añadir un `build_<algo>_topic()` puro en `mqtt_handler.py` y suscribir en el handler de CONNACK (ver `build_feedback_topic`/su uso como ejemplo).
+4. Actualizar las entidades que deban consumirlo y documentar el topic/payload en `docs/mysair-mqtt-protocol.md`.
+5. Recuerda: el frame se recibe en `mqtt_handler._on_message` — parsing frágil por `split`/`{...}`.
 
 ### Modificar la API HTTP
 1. Todos los endpoints están en `api.py`. Añade el método siguiendo el patrón: header `Authorization: Bearer`, `timeout`, comprobación de `status_code`, extracción de `entity`.
@@ -170,6 +183,14 @@ Los tests y la documentación están en la raíz del repo.
 - [ ] Si añadiste plataforma: está en `PLATFORMS`.
 - [ ] Mensaje de commit descriptivo.
 - [ ] Rama distinta de `main` si se pedirá PR (no commitear en `main` sin permiso del usuario).
+
+### Flujo de ramas (origin)
+
+Solo existen `main` y `develop` en `origin`; no dejar ramas de feature huérfanas tras el merge.
+
+1. Crear una rama de feature corta **desde `develop`** (nombre descriptivo, p. ej. `mqtt-robustness`).
+2. Commits + PR **contra `develop`**; borrar la rama al fusionar (`gh pr merge --delete-branch` o equivalente).
+3. `develop` se fusiona contra `main` **cuando el usuario lo pida o lo considere necesario** (release), no automáticamente en cada PR.
 
 ---
 
@@ -203,10 +224,16 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **`password` ya no se guarda en claro** (A6): la config entry solo persiste `email` + `refresh_token`; la sesión se renueva en cada arranque con `MySairAPI.refresh_tokens()`. Migración automática elimina `password`/`access_token` de entradas antiguas en el primer arranque tras actualizar.
 - ✅ **`unique_id`** en la config entry (C2): evita añadir la misma cuenta dos veces.
 - ✅ **Reauth flow** (C3): `ConfigEntryAuthFailed`/`ConfigEntryNotReady` en `async_setup_entry` + `async_step_reauth` en `config_flow.py`. Camino de reauth no probado todavía en producción (ver `docs/execution-plan.md` Tarea 9).
+- ✅ **Tests de `config_flow.py`/`__init__.py`** con harness real de HA (unique_id, reauth, `ConfigEntryAuthFailed`/`NotReady`, migración A6, unload) vía Docker (`docker compose run --rm test-ha`) — no requiere instalar nada en la máquina del desarrollador. Ver `docs/execution-plan.md` Tarea 12 y `docs/testing-strategy.md`.
+- ✅ **Tests de entidades y eventos MQTT** (climate/sensor/switch reaccionando a `mysair_update`, comandos, filtro por `ctl`) — `tests/test_entities.py`, ver `docs/execution-plan.md` Tarea 13.
+- ✅ **Sensor de humedad y disponibilidad real de heat/cool** (F1) + **min/max temp reales** (C8) — ver `docs/execution-plan.md` Tarea 15.
+- ✅ **Confirmación de comandos vía topic `feedback`** (E7, parte 1): suscripción, evento `mysair_feedback`, log de confirmación/timeout por entidad. **Sin revertir estado todavía** — pendiente de validar el payload real en producción (#23). Ver `docs/execution-plan.md` Tarea 16.
+- ✅ **`datetime.utcnow()` obsoleto** (C6, en la firma SigV4), **`FlowResult`→`ConfigFlowResult`** (C7), y **`should_poll=False` + `available` por frescura de MQTT** (C5, todas las entidades no disponibles hasta el primer status y de nuevo si no llega nada en 360 s). Ver `docs/execution-plan.md` Tarea 17.
 
 Pendientes:
 - 🟡 **Parser de frame MQTT frágil** (#6, requiere dump real de bytes).
-- 🟡 **Tests de `config_flow.py`/`__init__.py`** (unique_id, reauth, `ConfigEntryAuthFailed`/`NotReady`) sin harness de HA — requiere `pytest-homeassistant-custom-component` + Python ≥3.12, no disponibles en este entorno.
+- 🟡 **Forma exacta del payload `feedback`** (#23) y **significado de `vv`/fanspeed** (#24) — ambos requieren una captura real de producción.
+- 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente).
 
 Decisiones de alcance (no son bugs):
 - **Solo primera `Location`** (#15) — soportar varias `Location` queda deliberadamente fuera de alcance.

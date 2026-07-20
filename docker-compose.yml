@@ -1,0 +1,9 @@
+services:
+  test-ha:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: pytest tests -v --asyncio-mode=auto

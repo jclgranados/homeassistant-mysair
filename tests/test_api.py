@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("requests")
 
-from api import MySairAPI, MySairAuthError, MySairConnectionError
+from api import MySairAPI, MySairAuthError, MySairConnectionError, extract_order_id
 
 
 def _api(session):
@@ -232,3 +232,23 @@ def test_send_zone_command_invalid_mode_raises(fake_session):
 def test_send_zone_command_missing_params_raises(fake_session):
     with pytest.raises(ValueError):
         _api(fake_session).send_zone_command("", "DEV", "power")
+
+
+# --- extract_order_id (E7, confirmación de comandos) ---
+
+def test_extract_order_id_ok():
+    response = {"msg": "Creado", "error": [], "entity": {"value": [{"orderId": "abc-123"}]}}
+    assert extract_order_id(response) == "abc-123"
+
+
+def test_extract_order_id_missing_entity_returns_none():
+    assert extract_order_id({"msg": "Creado", "error": []}) is None
+
+
+def test_extract_order_id_empty_value_list_returns_none():
+    assert extract_order_id({"entity": {"value": []}}) is None
+
+
+def test_extract_order_id_non_dict_returns_none():
+    assert extract_order_id(None) is None
+    assert extract_order_id("not-a-dict") is None

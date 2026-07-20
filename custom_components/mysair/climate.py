@@ -8,6 +8,8 @@ from homeassistant.components.climate.const import (
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 from homeassistant.core import callback
 
+from .availability import AvailabilityMixin
+from .command_feedback import CommandFeedbackMixin
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,7 +32,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     _LOGGER.info(f"[MySair Climate] ✅ {len(entities)} termostatos creados.")
 
 
-class MySairThermostat(ClimateEntity):
+class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
     """Entidad Climate de un termostato MySair."""
 
     _attr_supported_features = (
@@ -39,9 +41,6 @@ class MySairThermostat(ClimateEntity):
         | ClimateEntityFeature.TURN_OFF
     )
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
-    _attr_min_temp = 10
-    _attr_max_temp = 30
 
     def __init__(self, hass, api, inst_ref, device_id, name):
         self.hass = hass
@@ -54,7 +53,14 @@ class MySairThermostat(ClimateEntity):
         self._current_temperature = None
         self._hvac_mode = HVACMode.OFF
         self._hvac_action = HVACAction.IDLE
+        # Valores por defecto hasta recibir el primer status por MQTT con las
+        # capacidades reales de la zona (allow_heat/allow_cool, tmm/tmx).
+        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
+        self._attr_min_temp = 10
+        self._attr_max_temp = 30
         self._unsub = None
+        self._init_command_feedback()
+        self._init_availability()
 
     @property
     def device_info(self):
@@ -69,11 +75,14 @@ class MySairThermostat(ClimateEntity):
     async def async_added_to_hass(self):
         _LOGGER.debug(f"[MySair Climate] 🧩 Entidad añadida: {self._attr_name} ({self.inst_ref}/{self.device_id})")
         self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+        self._start_feedback_listener()
 
     async def async_will_remove_from_hass(self):
         if self._unsub:
             self._unsub()
             self._unsub = None
+        self._stop_feedback_listener()
+        self._stop_availability()
 
     @property
     def hvac_mode(self):
@@ -107,13 +116,14 @@ class MySairThermostat(ClimateEntity):
 
         _LOGGER.info(f"[MySair Climate] 🌡️ Cambiando temperatura a {new_temp}°C en {self.name}")
         try:
-            await self.hass.async_add_executor_job(
+            response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,
                 self.device_id,
                 "temp",
                 new_temp
             )
+            self._track_command_confirmation(response)
             self.async_write_ha_state()
         except Exception as e:
             _LOGGER.error(f"[MySair Climate] ❌ Error al enviar cambio de temperatura: {e}")
@@ -124,9 +134,10 @@ class MySairThermostat(ClimateEntity):
             return
 
         try:
+            response = None
             if hvac_mode == HVACMode.HEAT:
                 _LOGGER.info(f"[MySair Climate] 🔥 Encendiendo {self.name} en CALOR a {self._target_temperature}°C")
-                await self.hass.async_add_executor_job(
+                response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
                     self.device_id,
@@ -137,7 +148,7 @@ class MySairThermostat(ClimateEntity):
 
             elif hvac_mode == HVACMode.COOL:
                 _LOGGER.info(f"[MySair Climate] ❄️ Encendiendo {self.name} en FRÍO a {self._target_temperature}°C")
-                await self.hass.async_add_executor_job(
+                response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
                     self.device_id,
@@ -148,13 +159,14 @@ class MySairThermostat(ClimateEntity):
 
             elif hvac_mode == HVACMode.OFF:
                 _LOGGER.info(f"[MySair Climate] ⛔ Apagando {self.name}")
-                await self.hass.async_add_executor_job(
+                response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
                     self.device_id,
                     "power"
                 )
 
+            self._track_command_confirmation(response)
             self._hvac_mode = hvac_mode
             self.async_write_ha_state()
 
@@ -188,10 +200,24 @@ class MySairThermostat(ClimateEntity):
                 continue
 
             _LOGGER.debug(f"[MySair Climate] 📨 Evento recibido para {self._attr_name}")
+            self._mark_status_received()
             if zone.get("temp_actual") is not None:
                 self._current_temperature = zone.get("temp_actual")
             if zone.get("temp_target") is not None:
                 self._target_temperature = zone.get("temp_target")
+            if zone.get("temp_min") is not None:
+                self._attr_min_temp = zone.get("temp_min")
+            if zone.get("temp_max") is not None:
+                self._attr_max_temp = zone.get("temp_max")
+
+            # Disponibilidad real de calor/frío según capacidades de la zona
+            # (c/f, ver docs/protocol-findings.md). Siempre se permite OFF.
+            modes = [HVACMode.OFF]
+            if zone.get("allow_heat"):
+                modes.append(HVACMode.HEAT)
+            if zone.get("allow_cool"):
+                modes.append(HVACMode.COOL)
+            self._attr_hvac_modes = modes
 
             # 'e' = encendido (on/off/standby); calor/frío = paridad de 'm'.
             # Ver docs/protocol-findings.md.

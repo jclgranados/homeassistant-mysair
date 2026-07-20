@@ -1,0 +1,10 @@
+# Dependencias para los tests P2 con harness de Home Assistant (config flow,
+# setup/unload, entidades). Requieren Python >= 3.12; se ejecutan vía Docker
+# (ver Dockerfile.test / docker-compose.yml), no en la máquina del desarrollador.
+#
+# pytest-homeassistant-custom-component fija internamente la versión de
+# `homeassistant` que instala (PyPI no publica versiones de `homeassistant`
+# más recientes que 2025.1.4 a fecha de escritura; ver docs/testing-strategy.md).
+pytest-homeassistant-custom-component==0.13.205
+requests>=2.31.0
+websocket-client==1.8.0

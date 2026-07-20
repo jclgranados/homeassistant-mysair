@@ -1,9 +1,10 @@
 import logging
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfTemperature, PERCENTAGE
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.core import callback
 
+from .availability import AvailabilityMixin
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
             entities.append(MySairTempSensor(hass, inst_ref, dev_id, f"{name} Temperatura Actual"))
             entities.append(MySairSetpointSensor(hass, inst_ref, dev_id, f"{name} Temperatura Consigna"))
             entities.append(MySairModeSensor(hass, inst_ref, dev_id, f"{name} Modo"))
+            entities.append(MySairHumiditySensor(hass, inst_ref, dev_id, f"{name} Humedad"))
 
     async_add_entities(entities)
     _LOGGER.info(f"[MySair Sensor] ✅ {len(entities)} sensores creados.")
@@ -30,7 +32,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 # ==========================================================
 # 🌡️ SENSOR DE TEMPERATURA ACTUAL
 # ==========================================================
-class MySairTempSensor(SensorEntity):
+class MySairTempSensor(AvailabilityMixin, SensorEntity):
     """Mide la temperatura actual de la zona."""
 
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -45,6 +47,7 @@ class MySairTempSensor(SensorEntity):
         self._attr_unique_id = f"mysair_temp_{inst_ref}_{device_id}"
         self._state = None
         self._unsub = None
+        self._init_availability()
 
     @property
     def device_info(self):
@@ -67,6 +70,7 @@ class MySairTempSensor(SensorEntity):
         if self._unsub:
             self._unsub()
             self._unsub = None
+        self._stop_availability()
 
     @callback
     def _handle_mqtt_update(self, event):
@@ -80,17 +84,18 @@ class MySairTempSensor(SensorEntity):
         for zone in data.get("zones", []):
             if zone.get("zone_id") != self.device_id:
                 continue
+            self._mark_status_received()
             new_val = zone.get("temp_actual")
             if new_val != self._state:
                 self._state = new_val
                 _LOGGER.debug(f"[MySair Sensor] 🌡️ {self._attr_name}: {new_val}°C")
-                self.async_write_ha_state()
+            self.async_write_ha_state()
 
 
 # ==========================================================
 # 🎯 SENSOR DE TEMPERATURA DE CONSIGNA
 # ==========================================================
-class MySairSetpointSensor(SensorEntity):
+class MySairSetpointSensor(AvailabilityMixin, SensorEntity):
     """Muestra la temperatura de consigna actual."""
 
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -105,6 +110,7 @@ class MySairSetpointSensor(SensorEntity):
         self._attr_unique_id = f"mysair_setpoint_{inst_ref}_{device_id}"
         self._state = None
         self._unsub = None
+        self._init_availability()
 
     @property
     def device_info(self):
@@ -127,6 +133,7 @@ class MySairSetpointSensor(SensorEntity):
         if self._unsub:
             self._unsub()
             self._unsub = None
+        self._stop_availability()
 
     @callback
     def _handle_mqtt_update(self, event):
@@ -140,17 +147,18 @@ class MySairSetpointSensor(SensorEntity):
         for zone in data.get("zones", []):
             if zone.get("zone_id") != self.device_id:
                 continue
+            self._mark_status_received()
             new_val = zone.get("temp_target")
             if new_val != self._state:
                 self._state = new_val
                 _LOGGER.debug(f"[MySair Sensor] 🎯 {self._attr_name}: {new_val}°C")
-                self.async_write_ha_state()
+            self.async_write_ha_state()
 
 
 # ==========================================================
 # 🔄 SENSOR DE MODO HVAC
 # ==========================================================
-class MySairModeSensor(SensorEntity):
+class MySairModeSensor(AvailabilityMixin, SensorEntity):
     """Muestra el modo actual (OFF / HEAT / COOL)."""
 
     _attr_icon = "mdi:repeat-variant"
@@ -163,6 +171,7 @@ class MySairModeSensor(SensorEntity):
         self._attr_unique_id = f"mysair_mode_{inst_ref}_{device_id}"
         self._state = "OFF"
         self._unsub = None
+        self._init_availability()
 
     @property
     def device_info(self):
@@ -185,6 +194,7 @@ class MySairModeSensor(SensorEntity):
         if self._unsub:
             self._unsub()
             self._unsub = None
+        self._stop_availability()
 
     @callback
     def _handle_mqtt_update(self, event):
@@ -198,6 +208,7 @@ class MySairModeSensor(SensorEntity):
         for zone in data.get("zones", []):
             if zone.get("zone_id") != self.device_id:
                 continue
+            self._mark_status_received()
             # 'e' = encendido; calor/frío = paridad de 'm'. Ver docs/protocol-findings.md.
             new_state = "OFF"
             if zone.get("is_on"):
@@ -210,5 +221,68 @@ class MySairModeSensor(SensorEntity):
             if new_state != self._state:
                 self._state = new_state
                 _LOGGER.debug(f"[MySair Sensor] 🔄 {self._attr_name}: {self._state}")
-                self.async_write_ha_state()
+            self.async_write_ha_state()
+
+
+# ==========================================================
+# 💧 SENSOR DE HUMEDAD
+# ==========================================================
+class MySairHumiditySensor(AvailabilityMixin, SensorEntity):
+    """Muestra la humedad relativa de la zona (campo ``hm``)."""
+
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_device_class = SensorDeviceClass.HUMIDITY
+    _attr_icon = "mdi:water-percent"
+
+    def __init__(self, hass, inst_ref, device_id, name):
+        self.hass = hass
+        self.inst_ref = inst_ref
+        self.device_id = device_id
+        self._attr_name = name
+        self._attr_unique_id = f"mysair_humidity_{inst_ref}_{device_id}"
+        self._state = None
+        self._unsub = None
+        self._init_availability()
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
+            "name": f"{self.device_id.upper()} ({self.inst_ref})",
+            "manufacturer": "MySair",
+            "model": "Zonificador de aire",
+            "sw_version": "v1.0",
+        }
+
+    @property
+    def native_value(self):
+        return self._state
+
+    async def async_added_to_hass(self):
+        self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+
+    async def async_will_remove_from_hass(self):
+        if self._unsub:
+            self._unsub()
+            self._unsub = None
+        self._stop_availability()
+
+    @callback
+    def _handle_mqtt_update(self, event):
+        topic = event.data.get("topic", "")
+        data = event.data.get("data", {})
+        if not topic.endswith("/status"):
+            return
+        ctl = data.get("ctl")
+        if ctl != self.inst_ref:
+            return
+        for zone in data.get("zones", []):
+            if zone.get("zone_id") != self.device_id:
+                continue
+            self._mark_status_received()
+            new_val = zone.get("humidity")
+            if new_val != self._state:
+                self._state = new_val
+                _LOGGER.debug(f"[MySair Sensor] 💧 {self._attr_name}: {new_val}%")
+            self.async_write_ha_state()
 

@@ -1,19 +1,17 @@
 {
   "domain": "mysair",
   "name": "MySair",
-  "version": "2.0.0",
-  "documentation": "https://github.com/jclgranados/homeassistant-mysair",
-  "issue_tracker": "https://github.com/jclgranados/homeassistant-mysair/issues",
+  "codeowners": ["@jclgranados"],
   "config_flow": true,
   "dependencies": [],
-  "codeowners": ["@jclgranados"],
-  "iot_class": "cloud_push",
+  "documentation": "https://github.com/jclgranados/homeassistant-mysair",
   "integration_type": "hub",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/jclgranados/homeassistant-mysair/issues",
+  "loggers": ["mysair"],
   "requirements": [
     "requests>=2.31.0",
     "websocket-client==1.8.0"
   ],
-  "loggers": ["mysair"],
-  "homeassistant": "2025.10.0"
+  "version": "2.3.0"
 }
-
