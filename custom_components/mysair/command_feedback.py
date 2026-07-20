@@ -71,9 +71,14 @@ class CommandFeedbackMixin:
     @callback
     def _on_feedback_timeout(self, now):
         if self._pending_order_id:
+            mqtt_client = getattr(self, "mqtt_client", None)
+            if mqtt_client is not None and not mqtt_client.connected:
+                reason = "MQTT desconectado en ese momento"
+            else:
+                reason = "con MQTT activo — puede ser un ACK perdido o un problema del backend"
             _LOGGER.warning(
                 f"[MySair] ⚠️ Sin confirmación MQTT para {self.name} tras "
-                f"{FEEDBACK_TIMEOUT_SECONDS}s (orderId={self._pending_order_id})"
+                f"{FEEDBACK_TIMEOUT_SECONDS}s ({reason}, orderId={self._pending_order_id})"
             )
             self._pending_order_id = None
         self._cancel_feedback_timeout = None

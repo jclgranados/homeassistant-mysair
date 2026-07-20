@@ -219,6 +219,27 @@ class MySairAPI:
         except (TypeError, ValueError):
             return False
 
+    def seconds_until_aws_credentials_expire(self, margin_seconds=60):
+        """Segundos hasta que conviene refrescar la conexión MQTT proactivamente.
+
+        Devuelve ``None`` si no hay credenciales o no se conoce ``aws_expires_at``
+        (no se puede programar un refresco por tiempo). Si ya ha expirado o está
+        dentro del margen, devuelve ``0`` (refrescar ya). Ver
+        docs/protocol-findings.md §6b: la app oficial programa un
+        ``setTimeout(refreshAwsCredentials, getMqttExpirationTime())`` para
+        refrescar la sesión MQTT *antes* de que AWS la corte, en vez de esperar
+        a que se caiga sola.
+        """
+        if not self.aws_credentials:
+            return None
+        expires_at = self.aws_credentials.get("aws_expires_at")
+        if not expires_at:
+            return None
+        try:
+            return max(float(expires_at) - time.time() - margin_seconds, 0)
+        except (TypeError, ValueError):
+            return None
+
     # ==========================================================
     # 📍 LOCATIONS / INSTALLATIONS / DEVICES
     # ==========================================================

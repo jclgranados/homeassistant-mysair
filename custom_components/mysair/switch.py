@@ -13,6 +13,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     """Configura los switches de MySair (encendido/apagado por zona)."""
     data = hass.data[DOMAIN][entry.entry_id]
     api = data["api"]
+    mqtt_client = data["mqtt"]
     devices = data["devices"]
 
     entities = []
@@ -20,7 +21,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         for dev in device_list:
             dev_id = dev.get("reference") or dev.get("rf") or dev.get("id")
             name = dev.get("name", f"Zona {dev_id} (Power)")
-            entities.append(MySairSwitch(hass, api, inst_ref, dev_id, name))
+            entities.append(MySairSwitch(hass, api, mqtt_client, inst_ref, dev_id, name))
 
     async_add_entities(entities)
     _LOGGER.info(f"[MySair Switch] ✅ {len(entities)} switches creados.")
@@ -31,9 +32,10 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
 
     _attr_icon = "mdi:power"
 
-    def __init__(self, hass, api, inst_ref, device_id, name):
+    def __init__(self, hass, api, mqtt_client, inst_ref, device_id, name):
         self.hass = hass
         self.api = api
+        self.mqtt_client = mqtt_client
         self.inst_ref = inst_ref
         self.device_id = device_id
         self._attr_unique_id = f"mysair_switch_{inst_ref}_{device_id}"

@@ -329,12 +329,18 @@ async def test_climate_command_feedback_from_other_installation_ignored(hass, mo
     assert "Comando confirmado" not in caplog.text
 
 
-async def test_climate_command_timeout_logs_warning(hass, monkeypatch, caplog):
+async def test_climate_command_timeout_logs_warning_when_mqtt_disconnected(hass, monkeypatch, caplog):
+    # MySairMQTTClient.start está parcheado a no-op: mqtt_client.connected
+    # se queda en False, como si el MQTT estuviera caído (causa real
+    # confirmada en producción de este aviso).
     caplog.set_level(logging.INFO)
     calls = []
-    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    entry = await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
     _fire_status(hass, "INST_A", _zone())
     await hass.async_block_till_done()
+
+    mqtt_client = hass.data[DOMAIN][entry.entry_id]["mqtt"]
+    assert mqtt_client.connected is False
 
     await hass.services.async_call(
         "climate", "set_hvac_mode",
@@ -348,6 +354,32 @@ async def test_climate_command_timeout_logs_warning(hass, monkeypatch, caplog):
     await hass.async_block_till_done()
 
     assert "Sin confirmación MQTT" in caplog.text
+    assert "MQTT desconectado" in caplog.text
+
+
+async def test_climate_command_timeout_logs_warning_when_mqtt_connected(hass, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    calls = []
+    entry = await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    _fire_status(hass, "INST_A", _zone())
+    await hass.async_block_till_done()
+
+    mqtt_client = hass.data[DOMAIN][entry.entry_id]["mqtt"]
+    mqtt_client.connected = True
+
+    await hass.services.async_call(
+        "climate", "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "heat"},
+        blocking=True,
+    )
+    assert len(calls) == 1
+
+    future = dt_util.utcnow() + timedelta(seconds=FEEDBACK_TIMEOUT_SECONDS + 1)
+    async_fire_time_changed(hass, future)
+    await hass.async_block_till_done()
+
+    assert "Sin confirmación MQTT" in caplog.text
+    assert "con MQTT activo" in caplog.text
 
 
 async def test_switch_command_confirmed_via_feedback(hass, monkeypatch, caplog):

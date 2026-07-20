@@ -120,6 +120,8 @@ class MySairMQTTClient:
         self.connected = False
         self._base_topic = None  # aws_base_topic, se fija al conectar
         self._mqtt_user = None  # aws_mqtt_user, para el topic de feedback
+        self._credential_refresh_timer = None
+        self._planned_reconnect = False
 
     # ----------------------------------------------------------
     # 🔗 Conexión principal
@@ -134,6 +136,7 @@ class MySairMQTTClient:
         """Cierra la conexión WebSocket limpiamente."""
         log("🛑 [MySair MQTT] Deteniendo cliente WebSocket MQTT...")
         self.stop_event.set()
+        self._cancel_credential_refresh_timer()
         if self.ws:
             try:
                 self.ws.close()
@@ -141,6 +144,40 @@ class MySairMQTTClient:
                 pass
         self.connected = False
         log("✅ [MySair MQTT] Cliente detenido.")
+
+    # ----------------------------------------------------------
+    # 🔄 Refresco proactivo de credenciales (evita que AWS corte primero)
+    # ----------------------------------------------------------
+    def _cancel_credential_refresh_timer(self):
+        if self._credential_refresh_timer:
+            self._credential_refresh_timer.cancel()
+            self._credential_refresh_timer = None
+
+    def _schedule_credential_refresh_timer(self):
+        """Programa un refresco de conexión antes de que caduquen las
+        credenciales AWS actuales, en vez de esperar a que AWS IoT corte la
+        conexión por su cuenta (causa confirmada de desconexiones periódicas
+        "sistemáticas" — ver docs/known-unknowns.md y protocol-findings.md §6b:
+        la app oficial hace exactamente esto con un setTimeout).
+        """
+        self._cancel_credential_refresh_timer()
+        delay = self.api.seconds_until_aws_credentials_expire()
+        if delay is None:
+            return
+        self._credential_refresh_timer = threading.Timer(delay, self._on_credential_refresh_due)
+        self._credential_refresh_timer.daemon = True
+        self._credential_refresh_timer.start()
+        log(f"⏳ [MySair MQTT] Refresco proactivo de conexión programado en {delay:.0f}s")
+
+    def _on_credential_refresh_due(self):
+        """Fuerza una reconexión con credenciales frescas antes de que caduquen."""
+        log("🔄 [MySair MQTT] Refrescando conexión antes de que caduquen las credenciales AWS...")
+        self._planned_reconnect = True
+        if self.ws:
+            try:
+                self.ws.close()
+            except Exception:
+                pass
 
     # ----------------------------------------------------------
     # 🧠 Lógica de conexión
@@ -189,15 +226,25 @@ class MySairMQTTClient:
                     on_close=self._on_close,
                 )
 
+                # Refrescar la conexión antes de que caduquen estas credenciales,
+                # en vez de esperar a que AWS IoT la corte (ver
+                # docs/known-unknowns.md — causa de desconexiones periódicas).
+                self._schedule_credential_refresh_timer()
+
                 self.ws.run_forever(ping_interval=30, ping_timeout=10)
 
             except Exception as e:
                 log(f"❌ [MySair MQTT] Error en conexión WebSocket: {e}", "error")
 
-            # Esperar antes de reintentar
+            # Esperar antes de reintentar, salvo que sea un refresco
+            # proactivo planificado (credenciales ya frescas: reconectar ya).
             if not self.stop_event.is_set():
-                log("🔁 [MySair MQTT] Reintentando conexión en 10 segundos...")
-                time.sleep(self._reconnect_delay)
+                if self._planned_reconnect:
+                    log("🔁 [MySair MQTT] Reconectando de inmediato (refresco proactivo de credenciales)...")
+                    self._planned_reconnect = False
+                else:
+                    log("🔁 [MySair MQTT] Reintentando conexión en 10 segundos...")
+                    time.sleep(self._reconnect_delay)
 
     # ----------------------------------------------------------
     # 📡 Callbacks WebSocket
