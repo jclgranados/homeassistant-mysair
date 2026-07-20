@@ -123,6 +123,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         if ATTR_TEMPERATURE not in kwargs:
             return
         new_temp = kwargs[ATTR_TEMPERATURE]
+        previous_temp = self._target_temperature
         self._target_temperature = new_temp
 
         if self._hvac_mode == HVACMode.OFF:
@@ -139,7 +140,11 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
                 "temp",
                 new_temp
             )
-            self._track_command_confirmation(response)
+
+            def _revert(previous=previous_temp):
+                self._target_temperature = previous
+
+            self._track_command_confirmation(response, revert_fn=_revert)
             self.async_write_ha_state()
         except Exception as e:
             _LOGGER.error(f"[MySair Climate] ❌ Error al enviar cambio de temperatura: {e}")
@@ -149,6 +154,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
             _LOGGER.warning(f"[MySair Climate] ❌ Modo HVAC inválido: {hvac_mode}")
             return
 
+        previous_mode = self._hvac_mode
         try:
             response = None
             if hvac_mode == HVACMode.HEAT:
@@ -182,7 +188,10 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
                     "power"
                 )
 
-            self._track_command_confirmation(response)
+            def _revert(previous=previous_mode):
+                self._hvac_mode = previous
+
+            self._track_command_confirmation(response, revert_fn=_revert)
             self._hvac_mode = hvac_mode
             self.async_write_ha_state()
 
@@ -195,6 +204,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
             return
 
         wire_value = _FAN_MODE_HA_TO_WIRE.get(fan_mode, fan_mode)
+        previous_fan_mode = self._fan_mode
         _LOGGER.info(f"[MySair Climate] 🌀 Cambiando velocidad de ventilador a {fan_mode} en {self.name}")
         try:
             response = await self.hass.async_add_executor_job(
@@ -204,7 +214,11 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
                 "fanspeed",
                 wire_value,
             )
-            self._track_command_confirmation(response)
+
+            def _revert(previous=previous_fan_mode):
+                self._fan_mode = previous
+
+            self._track_command_confirmation(response, revert_fn=_revert)
             self._fan_mode = fan_mode
             self.async_write_ha_state()
         except Exception as e:
@@ -238,6 +252,9 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
 
             _LOGGER.debug(f"[MySair Climate] 📨 Evento recibido para {self._attr_name}")
             self._mark_status_received()
+            # Un status real es la verdad más fresca: descarta cualquier
+            # comando pendiente de confirmar (y su revert), ya no hace falta.
+            self._clear_pending_command()
             if zone.get("temp_actual") is not None:
                 self._current_temperature = zone.get("temp_actual")
             if zone.get("temp_target") is not None:

@@ -61,13 +61,13 @@
 
 | # | Tarea | Prio |
 |---|---|---|
-| E1 | Parser MQTT robusto: decodificar la cabecera MQTT real (longitud de topic, packet id) en vez de `split`/`{...}`. Requiere `known-unknowns` #6. | 🟠 |
+| E1 | Parser MQTT robusto: decodificar la cabecera MQTT real (longitud de topic, packet id) en vez de `split`/`{...}`. | ✅ Hecho (`known-unknowns` #6 resuelto) — usado como método primario con fallback a la heurística anterior si no es concluyente. |
 | E2 | Manejo de frames parciales / múltiples paquetes por frame WS. | 🟡 |
 | E3 | Backoff exponencial con jitter en reconexión (hoy fijo 10 s). | 🟡 |
 | E4 | Validación de esquema de payloads (rechazar/loguear los inesperados). | 🟡 |
 | E5 | Evaluar `client_id` propio distinto del de la app oficial para evitar expulsiones (`known-unknowns` #20). | ✅ Hecho |
 | E6 | Evaluar migrar a `paho-mqtt` (ya declarado) sobre WebSocket con SigV4, reduciendo código artesanal. | 🟡 |
-| E7 | Reconciliación de estado optimista con timeout (revertir si no llega confirmación MQTT). | 🟠 Infraestructura hecha (suscripción a `feedback`, correlación por `orderId`, log de confirmación/timeout). **Revertir el estado** queda pendiente de validar el payload real en producción (`known-unknowns` #23). |
+| E7 | Reconciliación de estado optimista con timeout (revertir si no llega confirmación MQTT). | ✅ Hecho — suscripción a `feedback`, correlación por `orderId`, y revert del estado optimista (temperatura/modo/fan_mode/switch) si no llega confirmación a tiempo; se descarta si llega un status real antes. |
 
 ---
 

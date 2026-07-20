@@ -27,7 +27,8 @@
 | 17 | Fiabilidad: `datetime.utcnow()` obsoleto (C6), `FlowResult`→`ConfigFlowResult` (C7), `should_poll=False` + disponibilidad por frescura MQTT (C5) | `api.py`, `config_flow.py`, `availability.py` (nuevo), `climate.py`, `sensor.py`, `switch.py` | 🟠 Alta | ✅ Hecho (126 tests verdes) |
 | 18 | Velocidad de ventilador (F2): comando `fanspeed` + `climate.fan_mode`/`fan_modes` | `api.py`, `climate.py` | 🟢 Baja | ✅ Hecho (134 tests verdes) |
 | 19 | Bugs reales de producción: extracción de topic sin paréntesis (rompía feedback por completo) y campo de humedad `hum` vs `hm` | `mqtt_handler.py`, `status_parser.py` | 🔴 Crítica | ✅ Hecho (139 tests verdes) |
-| 20 | Causa raíz de desconexiones MQTT sistemáticas (A7 completado): refresco proactivo de conexión antes de que caduquen las credenciales AWS, + mensaje explícito de motivo cuando falta confirmación | `api.py`, `mqtt_handler.py`, `command_feedback.py`, `climate.py`, `switch.py` | 🔴 Crítica | ✅ Hecho (151 tests verdes) |
+| 20 | Causa raíz de desconexiones MQTT sistemáticas (A7 completado): refresco proactivo de conexión antes de que caduquen las credenciales AWS, + mensaje explícito de motivo cuando falta confirmación | `api.py`, `mqtt_handler.py`, `command_feedback.py`, `climate.py`, `switch.py` | 🔴 Crítica | ✅ Hecho (151 tests verdes) — **verificado en producción** |
+| 21 | E7 parte 2 (revertir estado optimista) + E1 (parser MQTT conforme al estándar) | `command_feedback.py`, `climate.py`, `switch.py`, `mqtt_handler.py` | 🟠 Alta | ✅ Hecho (166 tests verdes) |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -176,15 +177,21 @@
 - **Mensaje explícito de motivo:** `climate.py`/`switch.py` reciben ahora una referencia a `mqtt_client` (desde `hass.data[DOMAIN][entry_id]["mqtt"]`) además de `api`. `command_feedback._on_feedback_timeout` usa `mqtt_client.connected` para distinguir en el log: *"MQTT desconectado en ese momento"* (la causa que se acaba de arreglar) vs. *"con MQTT activo — puede ser un ACK perdido o un problema del backend"* (indicaría un problema distinto si volviera a pasar con la conexión arriba).
 - Tests: 6 nuevos en `test_mqtt_connection.py` (`seconds_until_aws_credentials_expire`, programación/cancelación del timer con un doble de `threading.Timer`, `_on_credential_refresh_due`) + 2 nuevos en `test_entities.py` (los dos motivos del aviso, usando `mqtt_client.connected`). 151 tests verdes en total.
 - `docs/known-unknowns.md` #22 actualizado: estaba marcado "✅ Resuelto" pero solo cubría la mitad (refresco al reconectar); ahora refleja la implementación completa y la causa raíz confirmada.
-- **No se ha podido verificar en producción todavía** que esto elimina las desconexiones — pendiente de que el usuario lo confirme observando los logs durante un periodo más largo.
+- ✅ **Verificado en producción (2026-07-20):** el usuario confirma que las desconexiones sistemáticas ya no ocurren tras desplegar el refresco proactivo.
+
+### Tarea 21 — E7 parte 2 (revertir estado optimista) + E1 (parser MQTT conforme al estándar)
+- **E7 parte 2:** `command_feedback._track_command_confirmation(response, revert_fn=None)` acepta ahora un cierre sin argumentos que restaura el estado local al valor previo. `climate.py` (temperatura, modo HVAC, velocidad de ventilador) y `switch.py` (on/off) capturan el valor anterior antes de cada cambio optimista y lo pasan como `revert_fn`. Si no llega confirmación en `FEEDBACK_TIMEOUT_SECONDS`, `_on_feedback_timeout` ejecuta el revert y republica el estado. Nuevo `_clear_pending_command()`: si llega un status MQTT real para la zona antes del timeout, se descarta cualquier revert pendiente (el dato fresco manda, no tiene sentido volver a un valor más viejo).
+- **E1:** investigando por qué aparecía un `(` fantasma antes del topic en los logs de producción (Tarea 19), se encontró la explicación real: los dos topics `.../status` capturados miden exactamente 40 caracteres (`chr(40)='('`) y el de `feedback` mide 31 (no imprimible, de ahí que no se viera nada) — no es un envoltorio de la app, es el byte bajo del campo de longitud de 2 bytes que precede al Topic Name en cualquier PUBLISH MQTT estándar. Esta coincidencia exacta entre longitud real del topic y carácter observado, cruzada entre dos capturas distintas, da confianza suficiente para implementar un decodificador conforme al estándar sin necesitar un hex dump real.
+  - `mqtt_handler.decode_varint` (inverso de `encode_varint`) + `mqtt_handler.parse_mqtt_publish`: decodifica remaining-length + Topic Name (2 bytes big-endian) + payload, saltando el Packet Identifier solo si QoS>0 (nuestras suscripciones piden QoS 0, así que no aplica en la práctica).
+  - Se usa como método **primario** en `_on_message`; si no es concluyente (estructura inesperada, topic con pinta rara), cae automáticamente a la heurística de texto anterior (sin cambios de comportamiento para esos casos). Se mantiene el fallback por prudencia: seguimos sin un hex dump real que confirme el 100% de los casos límite.
+- Tests: 12 nuevos en `test_mqtt_connection.py` (revert de temperatura/modo/fan_mode/switch, pending descartado por status real, `decode_varint`, `parse_mqtt_publish` con las longitudes exactas de las capturas reales, QoS>0, frames truncados/no-PUBLISH). 166 tests verdes en total.
+- `docs/known-unknowns.md` #6 marcado ✅ Resuelto (antes "parcial").
 
 ### Pendiente (no bloqueado, siguiente)
-- **Verificar en producción** que las desconexiones sistemáticas desaparecen con el refresco proactivo (Tarea 20) — pendiente de confirmación del usuario.
-- E7 parte 2: revertir estado optimista — con #23 ya resuelto (payload confirmado plano), esto ya no está bloqueado por falta de datos; queda como trabajo futuro deliberado, no por incertidumbre de protocolo.
 - F5: servicio `mysair.stop_installation`. F6: temporizador/programas (más especulativo).
-- Robustez del parser de frame MQTT (#6, decodificar cabecera real en vez de heurísticas de texto — E1).
 - Backoff exponencial con jitter en reconexión (E3) — ahora mismo el fijo de 10s solo se aplica a desconexiones no planificadas; sigue siendo una mejora posible ahí.
 - Traducciones/`strings.json` (C4) — desbloquearía poder reclamar `quality_scale` de nuevo.
 - C1: coordinador central de estado (refactor grande, no abordado).
 - D1-D4: observabilidad (`diagnostics.py`, redacción de logs, sensor de conexión MQTT).
 - Campos de zona sin mapear observados en producción (`vf`, `hmh`, `mh`, `p`, `ps`, `sv`) — investigar si aportan algo útil.
+- Confirmar en producción que el parser estricto de E1 funciona con tráfico real (los tests usan bytes sintéticos conformes al estándar, no una captura real de bytes).
