@@ -12,8 +12,36 @@ import sys
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "custom_components", "mysair"))
+# Necesario para que el harness de HA (Docker) pueda hacer `import
+# custom_components` como paquete namespace y descubrir `custom_components/mysair`
+# (ver homeassistant.loader._get_custom_components).
+sys.path.insert(0, _REPO_ROOT)
 
 import pytest
+
+try:
+    import pytest_homeassistant_custom_component  # noqa: F401
+
+    _HA_TEST_HARNESS_AVAILABLE = True
+except ImportError:
+    _HA_TEST_HARNESS_AVAILABLE = False
+
+if _HA_TEST_HARNESS_AVAILABLE:
+    # Solo se define cuando el harness de HA está instalado (Docker, ver
+    # Dockerfile.test). Al montar el fixture hass(), pytest-homeassistant-
+    # custom-component importa SU PROPIO paquete `custom_components` de
+    # prueba (un paquete regular, no namespace) y lo deja cacheado en
+    # sys.modules con __path__ apuntando solo a esa carpeta interna. Como
+    # __path__ es una lista mutable, añadimos nuestra carpeta real para que
+    # `homeassistant.loader` encuentre también custom_components/mysair.
+    @pytest.fixture(autouse=True)
+    def auto_enable_custom_integrations(hass, enable_custom_integrations):
+        import custom_components as _test_custom_components
+
+        our_custom_components_dir = os.path.join(_REPO_ROOT, "custom_components")
+        if our_custom_components_dir not in _test_custom_components.__path__:
+            _test_custom_components.__path__.append(our_custom_components_dir)
+        yield
 
 
 class FakeResponse:

@@ -54,12 +54,18 @@ Para arquitectura, protocolo HTTP/MQTT, modelo de dominio, estrategia de tests y
 
 ## Desarrollo y contribuciones
 
-El repositorio no tiene entorno de HA para tests completos todavía; los tests P0/P1 (parser, builders MQTT, firma SigV4, cliente HTTP) corren sin HA:
+Tests P0/P1 (parser, builders MQTT, firma SigV4, cliente HTTP) corren sin Home Assistant:
 
 ```bash
 python -m venv .venv-test && source .venv-test/bin/activate
 pip install -r requirements-test.txt
 pytest
+```
+
+Tests P2 (config flow, setup/unload) usan un harness real de Home Assistant, vía Docker — no instala nada en tu máquina:
+
+```bash
+docker compose run --rm test-ha
 ```
 
 Issues y pull requests son bienvenidos. Revisa `CLAUDE.md` antes de tocar el protocolo o las credenciales.

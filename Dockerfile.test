@@ -1,0 +1,10 @@
+# Imagen para correr los tests P2 (harness de Home Assistant) sin instalar
+# nada en la máquina del desarrollador. Ver docs/testing-strategy.md.
+FROM python:3.12-slim
+
+WORKDIR /workspace
+
+COPY requirements-test-ha.txt .
+RUN pip install --no-cache-dir -r requirements-test-ha.txt
+
+CMD ["pytest", "tests", "-v", "--asyncio-mode=auto"]

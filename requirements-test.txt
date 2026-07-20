@@ -5,7 +5,7 @@ requests>=2.31.0
 websocket-client==1.8.0
 freezegun>=1.2
 
-# Para los tests con harness de Home Assistant (pendientes de reestructurar el
-# repo a custom_components/mysair/, ver docs/execution-plan.md Tarea 5):
-# homeassistant
-# pytest-homeassistant-custom-component
+# Los tests P2 con harness de Home Assistant (config flow, setup/unload) NO se
+# instalan aquí: requieren Python >= 3.12 y corren vía Docker para no tocar la
+# máquina del desarrollador. Ver Dockerfile.test, docker-compose.yml,
+# requirements-test-ha.txt y docs/testing-strategy.md.

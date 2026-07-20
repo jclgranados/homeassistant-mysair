@@ -27,7 +27,7 @@
 | B2 | Añadir `pytest` + `pytest-homeassistant-custom-component` + fixtures sanitizadas (`docs/testing-strategy.md`). | 🟠 |
 | B3 | Tests P0/P1 (funciones puras, HTTP, config flow). | 🟠 |
 | B4 | Tests P2/P3 (MQTT, entidades, unload/reload) tras Fase A. | 🟡 |
-| B5 | CI GitHub Actions: `ruff`, `hassfest`, `pytest`. | 🟡 |
+| B5 | CI GitHub Actions: `hassfest`, `pytest` (P0/P1 + P2 vía Docker). | ✅ Hecho (`ruff` queda fuera: no configurado en el repo todavía) |
 
 ---
 
