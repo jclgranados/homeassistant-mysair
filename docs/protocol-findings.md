@@ -176,8 +176,29 @@ Config del bundle: `VUE_APP_API_DOMAIN="https://api.mysair.es"`, `VUE_APP_OUTSER
 | **Expiración credenciales AWS** | Reutiliza hasta fallar | 🔴 Leer `aws_expires_at` y refrescar antes de expirar (y en cada reconexión) |
 | **Base del topic** | Hardcodea `pro/v1/get/` | 🟡 Debería venir de `aws_base_topic` (fallback al valor actual) |
 | Token HTTP `expires_at` | Refresca solo ante 401 | 🟡 Oportunidad: refresco proactivo |
-| Topic de feedback `usr/{user}/feedback` | No usado | 🟢 Oportunidad: correlación comando→ack por `orderId` |
+| Topic de feedback `usr/{user}/feedback` | No usado | ✅ Consumido: suscripción + evento `mysair_feedback` + log de confirmación/timeout por entidad (ver §8) |
 | Capacidades `c`/`f` (calor/frío) y humedad (`hm`) | Parseadas, sin entidad | ✅ Expuestas: `climate.hvac_modes` dinámico según `allow_heat`/`allow_cool`, sensor de humedad por zona |
 | Capacidades `v`/`s` (fan/suelo) | Parseadas, sin entidad | 🟢 Oportunidad: exponer fan/suelo (no implementado — requiere entender los comandos `fanspeed`) |
 | `tmm`/`tmx` en `climate.min_temp`/`max_temp` | Fijos en 10/30 | ✅ Corregido (C8): se actualizan desde el status MQTT por zona |
 | Comandos `fanspeed/temporizer/stop/programs` | No implementados | 🟢 Oportunidad de nuevas funcionalidades |
+
+---
+
+## 8. Confirmación de comandos: `orderId` y topic `feedback` (CONFIRMADO)
+
+```js
+// POST /send/instruction devuelve el orderId en la respuesta:
+this.$api.instruction(this._generateInstruction(e,t,i,a),
+  e=>this.$onceOutInstance("reciveInstruction_"+e.entity.value[0].orderId, ...))
+
+// Suscripción al topic de feedback (una vez, con el clientId de sesión):
+this.$mqtt.subscribe(`usr/${this.$session.getClientId()}/feedback`,
+  e=>{this.$emitInstance("reciveInstruction_"+e.orderId,e)})
+// (subscribe() antepone `${basePath}get/` → pro/v1/get/usr/{aws_mqtt_user}/feedback)
+```
+
+- La respuesta de `POST /send/instruction` incluye `entity.value[0].orderId` (confirmado; antes solo se leían `msg`/`error`).
+- El ACK llega por MQTT en el topic `pro/v1/get/usr/{aws_mqtt_user}/feedback`, como un objeto con `orderId` (y `ctl`, usado por la app para encadenar con `reciveStatus_{ctl}`) **directamente sobre el objeto que entrega el wrapper MQTT** — sin envoltorio `value` de string JSON como en `status`.
+- **No confirmado con captura real de producción** (`known-unknowns.md` #23): se implementó de forma defensiva (`status_parser.parse_feedback_payload` prueba primero la forma plana y cae a una forma anidada tipo `status` como fallback) para no romper si el backend envuelve este topic de otra manera.
+- `VUE_APP_OUTSERVICE_MILISECOND="5000"` (config del bundle) es el timeout que usa la propia app para dar un comando por perdido — reutilizado tal cual como `FEEDBACK_TIMEOUT_SECONDS` en la integración.
+- **Implementado:** suscripción al topic (`mqtt_handler.build_feedback_topic`), evento `mysair_feedback` en el bus (`__init__.py`), y en `climate.py`/`switch.py` (vía `command_feedback.CommandFeedbackMixin`) log de confirmación si llega el ACK con el `orderId` esperado, o log de aviso si no llega en 5 s. **No se revierte el estado optimista todavía** — eso queda pendiente de validar la forma real del payload en producción (ver `execution-plan.md` Tarea 16).

@@ -8,6 +8,7 @@ from homeassistant.components.climate.const import (
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 from homeassistant.core import callback
 
+from .command_feedback import CommandFeedbackMixin
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     _LOGGER.info(f"[MySair Climate] ✅ {len(entities)} termostatos creados.")
 
 
-class MySairThermostat(ClimateEntity):
+class MySairThermostat(CommandFeedbackMixin, ClimateEntity):
     """Entidad Climate de un termostato MySair."""
 
     _attr_supported_features = (
@@ -57,6 +58,7 @@ class MySairThermostat(ClimateEntity):
         self._attr_min_temp = 10
         self._attr_max_temp = 30
         self._unsub = None
+        self._init_command_feedback()
 
     @property
     def device_info(self):
@@ -71,11 +73,13 @@ class MySairThermostat(ClimateEntity):
     async def async_added_to_hass(self):
         _LOGGER.debug(f"[MySair Climate] 🧩 Entidad añadida: {self._attr_name} ({self.inst_ref}/{self.device_id})")
         self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+        self._start_feedback_listener()
 
     async def async_will_remove_from_hass(self):
         if self._unsub:
             self._unsub()
             self._unsub = None
+        self._stop_feedback_listener()
 
     @property
     def hvac_mode(self):
@@ -109,13 +113,14 @@ class MySairThermostat(ClimateEntity):
 
         _LOGGER.info(f"[MySair Climate] 🌡️ Cambiando temperatura a {new_temp}°C en {self.name}")
         try:
-            await self.hass.async_add_executor_job(
+            response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,
                 self.device_id,
                 "temp",
                 new_temp
             )
+            self._track_command_confirmation(response)
             self.async_write_ha_state()
         except Exception as e:
             _LOGGER.error(f"[MySair Climate] ❌ Error al enviar cambio de temperatura: {e}")
@@ -126,9 +131,10 @@ class MySairThermostat(ClimateEntity):
             return
 
         try:
+            response = None
             if hvac_mode == HVACMode.HEAT:
                 _LOGGER.info(f"[MySair Climate] 🔥 Encendiendo {self.name} en CALOR a {self._target_temperature}°C")
-                await self.hass.async_add_executor_job(
+                response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
                     self.device_id,
@@ -139,7 +145,7 @@ class MySairThermostat(ClimateEntity):
 
             elif hvac_mode == HVACMode.COOL:
                 _LOGGER.info(f"[MySair Climate] ❄️ Encendiendo {self.name} en FRÍO a {self._target_temperature}°C")
-                await self.hass.async_add_executor_job(
+                response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
                     self.device_id,
@@ -150,13 +156,14 @@ class MySairThermostat(ClimateEntity):
 
             elif hvac_mode == HVACMode.OFF:
                 _LOGGER.info(f"[MySair Climate] ⛔ Apagando {self.name}")
-                await self.hass.async_add_executor_job(
+                response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
                     self.device_id,
                     "power"
                 )
 
+            self._track_command_confirmation(response)
             self._hvac_mode = hvac_mode
             self.async_write_ha_state()
 

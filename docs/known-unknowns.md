@@ -27,11 +27,13 @@ Ver `docs/protocol-findings.md` para el detalle con las citas del JS.
 |---|---|---|---|
 | 5 | Ruta **completa** del topic de estado | ✅ Resuelto | `pro/v1/get/ctl/{ref}/status`. Estructura `env/version/method/type/device/property`; base = `aws_base_topic` (=`pro/v1/`). Ver `protocol-findings.md §6b`. |
 | 6 | Formato binario exacto del frame PUBLISH | 🟡 Abierto | La app usa una librería MQTT (no revela nuestro parseo crudo). Estructura de topic conocida. Sigue frágil (`split`/`{...}`) → validar con dump real. 🔴 para robustez. |
-| 7 | ¿Otros topics/eventos? | ✅ Resuelto | Bajo `ctl/{ref}/#` solo `status`. Existe topic aparte `pro/v1/get/usr/{aws_mqtt_user}/feedback` (ack con `orderId`) que la app usa y nosotros no. |
+| 7 | ¿Otros topics/eventos? | ✅ Resuelto | Bajo `ctl/{ref}/#` solo `status`. Existe topic aparte `pro/v1/get/usr/{aws_mqtt_user}/feedback` (ack con `orderId`) — **ahora consumido** (ver `execution-plan.md` Tarea 16). |
 | 8 | Significado de `tmm`/`tmx` | ✅ Resuelto | temp mínima/máxima. |
 | 9 | ¿`;` final en `value`? | ✅ Resuelto | La app hace `value.slice(0,-1)` (terminador); se recorta antes de `json.loads`. |
 | 10 | ¿El broker exige el `password` MQTT? | 🟢 Abierto | Bajo (SigV4 en la URL). La app usa el SDK AWS IoT (creds en la firma). |
 | 11 | ¿Heartbeat de aplicación? | ✅ Resuelto | No; el SDK/WS gestiona keepalive. Nuestro ping WS (30s) es suficiente. |
+| 23 | Forma exacta del payload del topic `feedback` (¿plano `{orderId,ctl,...}` o envuelto en `value` como `status`?) | 🟡 Abierto | El JS lee `e.orderId`/`e.ctl` directamente sobre el objeto que entrega el wrapper MQTT (mismo shape que recibe nuestro `_on_message`), sugiriendo formato plano — pero no hay captura real de producción que lo confirme. `status_parser.parse_feedback_payload` prueba primero el nivel plano y cae a un `value` anidado como fallback defensivo. **Validar** con un log real (`DEBUG`) la primera vez que se envíe un comando en producción. |
+| 24 | Significado de los valores de `vv` (velocidad de ventilador) | 🟡 Abierto | Comando `setFanspeed(e,t,i)` envía `value:""+i` (índice numérico crudo). Pista sin confirmar en la UI: grupos `{key:"auto",values:["A"]}` / `{key:"manual",values:["1","2","3"]}` — sugiere que `i` podría ser `"A"` o `"1".."3"`, pero no está verificado contra una respuesta `status` real. Bloquea F2 (`development-roadmap.md`). |
 
 ---
 
@@ -72,7 +74,7 @@ Ver `docs/protocol-findings.md` para el detalle con las citas del JS.
 ## 6. Resumen
 
 - ✅ **Resueltos desde el bundle oficial** (`docs/protocol-findings.md`): #1-5, #7-9, #11, #16-17, #20-22.
-- 🟡 **Abiertos (menores / requieren captura real):** #6 (bytes del frame — robustez del parser), #10 (password MQTT), #12/#13 (campos HTTP de `/devices`), #14 (`validated`), #18/#19 (endpoints/rate limiting).
+- 🟡 **Abiertos (menores / requieren captura real):** #6 (bytes del frame — robustez del parser), #10 (password MQTT), #12/#13 (campos HTTP de `/devices`), #14 (`validated`), #18/#19 (endpoints/rate limiting), #23 (forma exacta del payload `feedback`), #24 (valores de `vv`, bloquea F2).
 - 🟢 **Aceptados por decisión de alcance:** #15 (multi-location — fuera de alcance, validado en producción con una `Location`).
 
 **Correcciones de código pendientes derivadas (ver roadmap):**

@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("websocket")
 pytest.importorskip("requests")
 
-from mqtt_handler import build_client_id, build_status_topic
+from mqtt_handler import build_client_id, build_status_topic, build_feedback_topic
 from api import MySairAPI
 
 
@@ -50,6 +50,20 @@ def test_status_topic_base_without_trailing_slash():
 def test_status_topic_default_when_missing():
     assert build_status_topic(None, "INST_A") == "pro/v1/get/ctl/INST_A/#"
     assert build_status_topic("", "INST_A") == "pro/v1/get/ctl/INST_A/#"
+
+
+# --- build_feedback_topic (#7, known-unknowns #23) ---
+
+def test_feedback_topic_with_base_topic():
+    assert build_feedback_topic("pro/v1/", "web0000") == "pro/v1/get/usr/web0000/feedback"
+
+
+def test_feedback_topic_base_without_trailing_slash():
+    assert build_feedback_topic("pro/v2", "web0000") == "pro/v2/get/usr/web0000/feedback"
+
+
+def test_feedback_topic_default_when_missing():
+    assert build_feedback_topic(None, "web0000") == "pro/v1/get/usr/web0000/feedback"
 
 
 # --- aws_credentials_expired (#22) ---

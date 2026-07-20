@@ -7,7 +7,7 @@ Semántica confirmada desde la app oficial (docs/protocol-findings.md):
 
 import pytest
 
-from status_parser import parse_mode, parse_status_payload, parse_status_value
+from status_parser import parse_mode, parse_status_payload, parse_status_value, parse_feedback_payload
 
 
 # --- parse_status_value ---
@@ -166,3 +166,28 @@ def test_parse_status_payload_skips_non_dict_thermostats():
     zones = parse_status_payload(payload)["zones"]
     assert len(zones) == 1
     assert zones[0]["zone_id"] == "D1"
+
+
+# --- parse_feedback_payload (topic .../feedback, known-unknowns #23) ---
+
+def test_parse_feedback_payload_flat_form():
+    payload = {"orderId": "abc-123", "ctl": "INST_A"}
+    assert parse_feedback_payload(payload) == {"order_id": "abc-123", "ctl": "INST_A", "raw": payload}
+
+
+def test_parse_feedback_payload_nested_value_fallback():
+    payload = {"ctl": "INST_A", "value": '{"orderId":"abc-123","ctl":"INST_A"};'}
+    result = parse_feedback_payload(payload)
+    assert result["order_id"] == "abc-123"
+    assert result["ctl"] == "INST_A"
+
+
+def test_parse_feedback_payload_missing_fields():
+    result = parse_feedback_payload({"foo": "bar"})
+    assert result["order_id"] is None
+    assert result["ctl"] is None
+
+
+def test_parse_feedback_payload_non_dict_input():
+    result = parse_feedback_payload("not-a-dict")
+    assert result == {"order_id": None, "ctl": None, "raw": "not-a-dict"}

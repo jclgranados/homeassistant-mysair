@@ -89,6 +89,20 @@ def build_status_topic(base_topic, ref):
     return f"{base}get/ctl/{ref}/#"
 
 
+def build_feedback_topic(base_topic, mqtt_user):
+    """Topic de confirmación (ACK) de instrucciones enviadas por HTTP.
+
+    Estructura confirmada desde la app oficial:
+    ``{aws_base_topic}get/usr/{aws_mqtt_user}/feedback``, con payload
+    ``{orderId, ctl, ...}`` (ver docs/protocol-findings.md §8 y
+    docs/known-unknowns.md #23 — forma exacta sin confirmar con captura real).
+    """
+    base = base_topic or "pro/v1/"
+    if not base.endswith("/"):
+        base += "/"
+    return f"{base}get/usr/{mqtt_user}/feedback"
+
+
 # ==========================================================
 # 🌐 Cliente principal MySair MQTT
 # ==========================================================
@@ -105,6 +119,7 @@ class MySairMQTTClient:
         self.ws = None
         self.connected = False
         self._base_topic = None  # aws_base_topic, se fija al conectar
+        self._mqtt_user = None  # aws_mqtt_user, para el topic de feedback
 
     # ----------------------------------------------------------
     # 🔗 Conexión principal
@@ -157,6 +172,7 @@ class MySairMQTTClient:
                 username = aws.get("aws_mqtt_user")
                 password = aws.get("aws_security_token")
                 self._base_topic = aws.get("aws_base_topic")
+                self._mqtt_user = username
 
                 # Generar URL firmada (no se loguea: contiene la firma AWS)
                 signed_url = self.api.aws_sign_url(host, region, access_key, secret_key, token)
@@ -203,11 +219,21 @@ class MySairMQTTClient:
             if message.startswith(b"\x20"):
                 log("✅ [MySair MQTT] CONNACK recibido, suscribiendo a topics...")
                 self.connected = True
-                for i, ref in enumerate(self.installation_refs, start=1):
+                packet_id = 1
+                for ref in self.installation_refs:
                     topic = build_status_topic(self._base_topic, ref)
-                    pkt = build_mqtt_subscribe(i, topic)
+                    pkt = build_mqtt_subscribe(packet_id, topic)
                     ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
                     log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {topic}")
+                    packet_id += 1
+
+                # Confirmación (ACK) de instrucciones enviadas por HTTP, ver
+                # docs/protocol-findings.md §8.
+                if self._mqtt_user:
+                    feedback_topic = build_feedback_topic(self._base_topic, self._mqtt_user)
+                    pkt = build_mqtt_subscribe(packet_id, feedback_topic)
+                    ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
+                    log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {feedback_topic}")
                 return
 
             # SUBACK
