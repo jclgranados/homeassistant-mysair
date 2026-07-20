@@ -44,6 +44,7 @@ Ajustes → Dispositivos y servicios → Añadir integración → **MySair** →
 
 ## Limitaciones conocidas
 
+- **Las entidades tardan unos segundos en mostrar datos reales tras un arranque/recarga**: aparecen como "no disponible" hasta recibir el primer status por MQTT (y de nuevo si se pierde la conexión más de 6 minutos), en vez de mostrar valores por defecto como si fueran en tiempo real.
 - **Solo la primera `Location`** de la cuenta: si tienes varias ubicaciones, solo se cargan las instalaciones de la primera (decisión de alcance, ver `docs/known-unknowns.md` #15).
 - El **parser de frames MQTT crudos** es best-effort (no decodifica la cabecera MQTT completa); es robusto para el tráfico observado hasta ahora pero podría fallar ante formatos no vistos (`docs/known-unknowns.md` #6).
 - Sin **fan speed** ni **modo automático** todavía (protocolo parcialmente reverseado, ver `docs/protocol-findings.md`).

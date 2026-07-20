@@ -6,6 +6,16 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-20
+
+### Added
+- Todas las entidades pasan a "no disponible" si no reciben un status MQTT en más de 6 minutos (antes mostraban indefinidamente el último dato conocido, o valores por defecto antes del primer status).
+- `should_poll = False` explícito en todas las entidades (integración 100% push, sin polling de HA).
+
+### Fixed
+- `datetime.utcnow()` (obsoleto) → `datetime.now(timezone.utc)` en la firma AWS SigV4.
+- `FlowResult` genérico → `ConfigFlowResult` en el config flow (tipo correcto para HA moderno).
+
 ## [2.2.0] - 2026-07-20
 
 ### Added
