@@ -39,9 +39,6 @@ class MySairThermostat(ClimateEntity):
         | ClimateEntityFeature.TURN_OFF
     )
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
-    _attr_min_temp = 10
-    _attr_max_temp = 30
 
     def __init__(self, hass, api, inst_ref, device_id, name):
         self.hass = hass
@@ -54,6 +51,11 @@ class MySairThermostat(ClimateEntity):
         self._current_temperature = None
         self._hvac_mode = HVACMode.OFF
         self._hvac_action = HVACAction.IDLE
+        # Valores por defecto hasta recibir el primer status por MQTT con las
+        # capacidades reales de la zona (allow_heat/allow_cool, tmm/tmx).
+        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
+        self._attr_min_temp = 10
+        self._attr_max_temp = 30
         self._unsub = None
 
     @property
@@ -192,6 +194,19 @@ class MySairThermostat(ClimateEntity):
                 self._current_temperature = zone.get("temp_actual")
             if zone.get("temp_target") is not None:
                 self._target_temperature = zone.get("temp_target")
+            if zone.get("temp_min") is not None:
+                self._attr_min_temp = zone.get("temp_min")
+            if zone.get("temp_max") is not None:
+                self._attr_max_temp = zone.get("temp_max")
+
+            # Disponibilidad real de calor/frío según capacidades de la zona
+            # (c/f, ver docs/protocol-findings.md). Siempre se permite OFF.
+            modes = [HVACMode.OFF]
+            if zone.get("allow_heat"):
+                modes.append(HVACMode.HEAT)
+            if zone.get("allow_cool"):
+                modes.append(HVACMode.COOL)
+            self._attr_hvac_modes = modes
 
             # 'e' = encendido (on/off/standby); calor/frío = paridad de 'm'.
             # Ver docs/protocol-findings.md.

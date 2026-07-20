@@ -64,12 +64,17 @@ def _zone(**overrides):
         "zone_id": "DEV_1",
         "temp_actual": 21.5,
         "temp_target": 22.0,
+        "temp_min": 10.0,
+        "temp_max": 30.0,
+        "humidity": 45.0,
         "is_on": True,
         "is_standby": False,
         "is_heat": True,
         "is_cool": False,
         "is_ac": True,
         "mode_raw": "0",
+        "allow_heat": True,
+        "allow_cool": True,
     }
     zone.update(overrides)
     return zone
@@ -206,3 +211,62 @@ async def test_switch_preserves_last_ac_mode_from_mqtt(hass, monkeypatch):
     )
 
     assert calls[-1]["value"] == "1"
+
+
+async def test_humidity_sensor_updates_from_mqtt_event(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(humidity=52.0))
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.salon_humedad").state == "52.0"
+
+
+async def test_climate_min_max_temp_from_status(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+    # Antes del primer status: valores por defecto (10-30).
+    assert hass.states.get("climate.salon").attributes["min_temp"] == 10
+    assert hass.states.get("climate.salon").attributes["max_temp"] == 30
+
+    _fire_status(hass, "INST_A", _zone(temp_min=16.0, temp_max=28.0))
+    await hass.async_block_till_done()
+
+    state = hass.states.get("climate.salon")
+    assert state.attributes["min_temp"] == 16.0
+    assert state.attributes["max_temp"] == 28.0
+
+
+async def test_climate_hvac_modes_restricted_by_capabilities(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+    # Antes del primer status: los 3 modos por defecto.
+    assert set(hass.states.get("climate.salon").attributes["hvac_modes"]) == {
+        HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL
+    }
+
+    # Zona que solo permite calor (allow_cool=False, p. ej. sin bomba de frío).
+    _fire_status(hass, "INST_A", _zone(allow_heat=True, allow_cool=False))
+    await hass.async_block_till_done()
+
+    modes = set(hass.states.get("climate.salon").attributes["hvac_modes"])
+    assert modes == {HVACMode.OFF, HVACMode.HEAT}
+    assert HVACMode.COOL not in modes
+
+
+async def test_climate_set_hvac_mode_rejected_when_not_allowed(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+
+    _fire_status(hass, "INST_A", _zone(allow_heat=True, allow_cool=False))
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "climate", "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "cool"},
+        blocking=True,
+    )
+
+    # La propia entidad rechaza el modo (no está en self._attr_hvac_modes) y no
+    # envía comando. HA solo avisa por log en esta versión (ver climate.py:
+    # el guard "if hvac_mode not in self._attr_hvac_modes" es lo que protege).
+    assert calls == []
+    assert hass.states.get("climate.salon").state != "cool"

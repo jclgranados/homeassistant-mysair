@@ -14,11 +14,12 @@ Integración **no oficial** de Home Assistant para el sistema de zonificación d
 
 | Entidad | Tipo | Descripción |
 |---|---|---|
-| `climate.<zona>` | Climate | Termostato: encendido/apagado, modo calor/frío, temperatura objetivo |
+| `climate.<zona>` | Climate | Termostato: encendido/apagado, modo calor/frío (según disponibilidad real de la zona), temperatura objetivo, min/max reales |
 | `switch.<zona>` | Switch | Encendido/apagado, preservando el último modo usado |
-| `sensor.<zona>_temperatura` | Sensor | Temperatura actual de la zona |
-| `sensor.<zona>_consigna` | Sensor | Temperatura objetivo (setpoint) |
-| `sensor.<zona>_modo` | Sensor | Modo actual (`off`/`heat`/`cool`) |
+| `sensor.<zona>_temperatura_actual` | Sensor | Temperatura actual de la zona |
+| `sensor.<zona>_temperatura_consigna` | Sensor | Temperatura objetivo (setpoint) |
+| `sensor.<zona>_modo` | Sensor | Modo actual (`OFF`/`HEAT`/`COOL`) |
+| `sensor.<zona>_humedad` | Sensor | Humedad relativa de la zona |
 
 ## Instalación
 

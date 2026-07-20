@@ -42,7 +42,7 @@
 | C5 | `_attr_should_poll = False` explícito; `available` basado en frescura de datos MQTT. | 🟡 |
 | C6 | Sustituir `datetime.utcnow()` por `datetime.now(timezone.utc)` en la firma SigV4. | 🟡 |
 | C7 | Revisar `FlowResult`→`ConfigFlowResult` y otras deprecaciones de la versión objetivo. | 🟢 |
-| C8 | Aplicar `tmm`/`tmx` reales a `min_temp`/`max_temp` de climate. | 🟢 |
+| C8 | Aplicar `tmm`/`tmx` reales a `min_temp`/`max_temp` de climate. | ✅ Hecho |
 
 ---
 
@@ -75,6 +75,7 @@
 
 | # | Tarea | Prio |
 |---|---|---|
+| F1 | Sensor de humedad (`hm`) y disponibilidad real de heat/cool en `climate.hvac_modes` según capacidades (`c`/`f`). | ✅ Hecho |
 | F2 | Exponer velocidad de ventilador / apertura de compuerta si existen en el protocolo (`known-unknowns` §2). | 🟢 |
 | F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | 🟢 |
 | F4 | `select` de modo reescrito y funcional. | 🟢 |
