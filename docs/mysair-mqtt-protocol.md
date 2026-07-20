@@ -62,13 +62,13 @@ Detección de tipo de paquete por **primer byte** del frame (`message.startswith
 |---|---|---|---|---|
 | `{aws_base_topic}get/ctl/{ref}/#` (=`pro/v1/get/ctl/{ref}/#`) | **Suscripción** | Recibir todo lo publicado bajo el controlador (incluye `.../status`) | `build_status_topic` | ✅ Confirmado |
 | `pro/v1/get/ctl/{ref}/status` | Recepción (publish del broker) | Estado de las zonas del controlador | callback | ✅ Confirmado |
-| `pro/v1/get/usr/{aws_mqtt_user}/feedback` | (la app lo usa; la integración **no**) | ACK de instrucciones con `orderId` | `protocol-findings.md §6b` | ✅ Confirmado |
+| `pro/v1/get/usr/{aws_mqtt_user}/feedback` | **Suscripción** | ACK de instrucciones con `orderId` | `build_feedback_topic`, `protocol-findings.md §8` | ✅ Confirmado (topic/mecanismo); 🟡 forma exacta del payload sin capturar en producción (`known-unknowns` #23) |
 
 - **Estructura del topic:** `env/version/method/type/device/property` (p. ej. `pro/v1/get/ctl/{ref}/status`). **Confirmado** (app oficial).
 - **Base:** `aws_base_topic` (=`pro/v1/`), con fallback histórico. **Confirmado**.
-- **Wildcard:** `#` (multinivel) al final de la suscripción. **Confirmado**.
+- **Wildcard:** `#` (multinivel) al final de la suscripción de estado; el topic de feedback no lleva wildcard (topic exacto). **Confirmado**.
 - **QoS:** 0 (sin PUBACK). **Confirmado**.
-- **Se suscribe con packet_id incremental** `i` (1-based) por instalación. **Confirmado**.
+- **Se suscribe con packet_id incremental** `i` (1-based): primero una suscripción por instalación, luego una más para el topic de feedback. **Confirmado**.
 
 > ✅ **Resuelto** (#5): la ruta completa del topic de estado es `pro/v1/get/ctl/{ref}/status`. Nuestro parser deduce el topic del prefijo del payload (`(topic){...}`); el formato binario exacto del frame (#6) sigue pendiente de dump real.
 
@@ -138,15 +138,16 @@ Estructura normalizada que emite `parse_status_payload` al event bus como `mysai
 ```
 
 ### 4.4 Mensajes no-status
-Cualquier mensaje cuyo topic no termine en `/status` se reenvía **crudo** al event bus (`__init__.py:127-133`). Ninguna entidad los consume (todas filtran por `/status`). **Confirmado** → efectivamente ignorados.
+- Topic `.../feedback` (ACK de instrucciones): parseado con `parse_feedback_payload` y reenviado como evento propio `mysair_feedback` (no `mysair_update`). Lo consumen `climate.py`/`switch.py` vía `command_feedback.CommandFeedbackMixin` para loguear confirmación/timeout de comandos (ver §5 y `protocol-findings.md §8`). **Confirmado**.
+- Cualquier otro topic (no `/status` ni `/feedback`) se reenvía **crudo** al event bus `mysair_update` (`__init__.py`). Ninguna entidad los consume. **Confirmado** → efectivamente ignorados.
 
 ---
 
 ## 5. Correlación comando↔respuesta
 
-- **Nuestra integración no correlaciona:** los comandos salen por **HTTP** y el estado llega por MQTT sin enlazarlos. **Confirmado**.
-- **La app oficial sí correlaciona** mediante el topic `pro/v1/get/usr/{aws_mqtt_user}/feedback`, que devuelve un ACK con `orderId` por instrucción (`_sendInstruction` → `reciveInstruction_{orderId}` → `reciveStatus_{ctl}`). ✅ Confirmado. **Oportunidad**: suscribirse a feedback para confirmar comandos.
-- La reconciliación actual es por **estado completo**: tras un comando, el estado optimista local se sobrescribe cuando llega el siguiente `status` (refresco de 120 s o cambio en el dispositivo). **Inferido**.
+- **La app oficial correlaciona** mediante el topic `pro/v1/get/usr/{aws_mqtt_user}/feedback`, que devuelve un ACK con `orderId` por instrucción (`_sendInstruction` → `reciveInstruction_{orderId}` → `reciveStatus_{ctl}`). ✅ Confirmado.
+- **Nuestra integración ahora también correlaciona** (parcialmente): `api.extract_order_id` lee el `orderId` de la respuesta de `/send/instruction`; `climate.py`/`switch.py` lo guardan y, al llegar el evento `mysair_feedback` con el mismo `orderId`, lo registran como confirmado por log. Si no llega en `FEEDBACK_TIMEOUT_SECONDS` (5 s, igual que `VUE_APP_OUTSERVICE_MILISECOND` de la app), se loguea un aviso. **No se revierte el estado optimista todavía** (pendiente de validar la forma real del payload de `feedback` en producción, `known-unknowns` #23).
+- La reconciliación de **estado** (no de comandos) sigue siendo por **estado completo**: tras un comando, el estado optimista local se sobrescribe cuando llega el siguiente `status` (refresco de 120 s o cambio en el dispositivo). **Inferido**.
 
 ---
 

@@ -6,6 +6,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-07-20
+
+### Added
+- Confirmación de comandos vía el topic MQTT `.../usr/{aws_mqtt_user}/feedback`: cada comando enviado por `climate`/`switch` se correlaciona con su `orderId`, y se registra en el log si llega confirmación o si no llega en 5 s. No revierte el estado optimista todavía (pendiente de validar el payload real en producción).
+
 ## [2.1.0] - 2026-07-20
 
 ### Added

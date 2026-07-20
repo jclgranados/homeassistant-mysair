@@ -18,6 +18,23 @@ class MySairConnectionError(Exception):
     """Fallo de red o del backend, no relacionado con las credenciales."""
 
 
+def extract_order_id(response):
+    """Extrae el ``orderId`` de la respuesta de ``POST /send/instruction``.
+
+    Confirmado desde la app oficial (ver docs/protocol-findings.md §8):
+    ``entity.value[0].orderId``. Devuelve ``None`` si la forma no coincide
+    (respuesta inesperada) en vez de lanzar, ya que solo se usa para
+    correlacionar con el ACK MQTT — no es crítico para que el comando en sí
+    haya funcionado.
+    """
+    if not isinstance(response, dict):
+        return None
+    try:
+        return response["entity"]["value"][0].get("orderId")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
+
+
 class MySairAPI:
     """Cliente API para Mysair."""
 

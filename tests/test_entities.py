@@ -5,14 +5,18 @@ vía `send_zone_command`. Sin red real: MySairAPI y MySairMQTTClient van
 parcheados (igual que en test_init_setup_unload.py).
 """
 
+import logging
+from datetime import timedelta
+
 import pytest
 
 pytest.importorskip("homeassistant")
 
+import homeassistant.util.dt as dt_util
 from homeassistant.components.climate.const import HVACMode, HVACAction
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.mysair.const import DOMAIN
+from custom_components.mysair.const import DOMAIN, FEEDBACK_TIMEOUT_SECONDS
 from custom_components.mysair.api import MySairAPI
 from custom_components.mysair.mqtt_handler import MySairMQTTClient
 
@@ -35,7 +39,8 @@ def _patch_happy_api(monkeypatch, send_zone_command_calls=None):
             send_zone_command_calls.append(
                 {"ctl": ctl, "device": device, "command_type": command_type, "value": value, "temperature": temperature}
             )
-            return {"msg": "Creado", "error": []}
+            order_id = f"order-{len(send_zone_command_calls)}"
+            return {"msg": "Creado", "error": [], "entity": {"value": [{"orderId": order_id}]}}
 
         monkeypatch.setattr(MySairAPI, "send_zone_command", _send_zone_command)
 
@@ -270,3 +275,75 @@ async def test_climate_set_hvac_mode_rejected_when_not_allowed(hass, monkeypatch
     # el guard "if hvac_mode not in self._attr_hvac_modes" es lo que protege).
     assert calls == []
     assert hass.states.get("climate.salon").state != "cool"
+
+
+# --- Confirmación de comandos vía feedback (E7, docs/protocol-findings.md §8) ---
+
+async def test_climate_command_confirmed_via_feedback(hass, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+
+    await hass.services.async_call(
+        "climate", "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "heat"},
+        blocking=True,
+    )
+    assert len(calls) == 1
+
+    hass.bus.async_fire(f"{DOMAIN}_feedback", {"order_id": "order-1", "ctl": "INST_A", "raw": {}})
+    await hass.async_block_till_done()
+
+    assert "Comando confirmado" in caplog.text
+
+
+async def test_climate_command_feedback_from_other_installation_ignored(hass, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+
+    await hass.services.async_call(
+        "climate", "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "heat"},
+        blocking=True,
+    )
+
+    hass.bus.async_fire(f"{DOMAIN}_feedback", {"order_id": "order-1", "ctl": "OTHER_INST", "raw": {}})
+    await hass.async_block_till_done()
+
+    assert "Comando confirmado" not in caplog.text
+
+
+async def test_climate_command_timeout_logs_warning(hass, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+
+    await hass.services.async_call(
+        "climate", "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "heat"},
+        blocking=True,
+    )
+    assert len(calls) == 1
+
+    future = dt_util.utcnow() + timedelta(seconds=FEEDBACK_TIMEOUT_SECONDS + 1)
+    async_fire_time_changed(hass, future)
+    await hass.async_block_till_done()
+
+    assert "Sin confirmación MQTT" in caplog.text
+
+
+async def test_switch_command_confirmed_via_feedback(hass, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.salon"}, blocking=True
+    )
+    assert len(calls) == 1
+
+    hass.bus.async_fire(f"{DOMAIN}_feedback", {"order_id": "order-1", "ctl": "INST_A", "raw": {}})
+    await hass.async_block_till_done()
+
+    assert "Comando confirmado" in caplog.text

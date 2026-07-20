@@ -23,6 +23,7 @@
 | 13 | Tests P2 de entidades y eventos MQTT (climate/sensor/switch) | `tests/test_entities.py` | 🟡 Media | ✅ Hecho (103 tests verdes) |
 | 14 | CI GitHub Actions: pytest P0/P1, pytest P2 (Docker), hassfest (B5) | `.github/workflows/tests.yml` | 🟡 Media | ✅ Hecho (verificado en PR #6, 3 jobs en verde) |
 | 15 | Features de protocolo: sensor de humedad, disponibilidad heat/cool, min/max temp reales (F1/C8) | `sensor.py`, `climate.py` | 🟢 Baja | ✅ Hecho (107 tests verdes) |
+| 16 | Confirmación de comandos vía topic `feedback` (E7, parte 1: infraestructura + logs, sin revertir estado) | `mqtt_handler.py`, `status_parser.py`, `api.py`, `command_feedback.py` (nuevo), `climate.py`, `switch.py` | 🟡 Media | ✅ Hecho (122 tests verdes) |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -126,7 +127,20 @@
 - Tests: 4 nuevos en `test_entities.py` (humedad, min/max temp dinámico, `hvac_modes` restringido, comando rechazado cuando el modo no está permitido) + `_zone()` (fixture compartida) actualizada con capacidades realistas por defecto. 107 tests verdes en total.
 - **Fuera de alcance deliberadamente:** control real de ventilador/velocidad de fan (`vv`, comando `fanspeed`) y suelo radiante — solo se expone la disponibilidad de calor/frío ya parseada, no se implementan comandos nuevos.
 
+### Tarea 16 — Confirmación de comandos vía topic `feedback` (E7, parte 1)
+- Investigación previa en el JS de la app (mismo bundle que el resto de `protocol-findings.md`) para confirmar, antes de implementar, que `POST /send/instruction` devuelve `entity.value[0].orderId` y que el ACK llega por MQTT en `pro/v1/get/usr/{aws_mqtt_user}/feedback` como `{orderId, ctl, ...}` — ver `protocol-findings.md §8`.
+- `status_parser.parse_feedback_payload(payload)`: normaliza el ACK a `{"order_id", "ctl", "raw"}`; prueba primero la forma plana confirmada y cae a una forma anidada tipo `status` como fallback defensivo (la forma exacta no está validada con una captura real, `known-unknowns` #23).
+- `mqtt_handler.build_feedback_topic(base_topic, mqtt_user)`: topic puro y testeado. `_run()` guarda `self._mqtt_user`; el handler de CONNACK se suscribe también a este topic (packet_id siguiente al de las instalaciones).
+- `__init__.py`: nueva rama `elif topic.endswith("/feedback")` en `mqtt_message_callback` → `parse_feedback_payload` + evento `mysair_feedback` en el bus (separado de `mysair_update`) + log INFO.
+- `api.extract_order_id(response)`: función pura, defensiva (devuelve `None` ante cualquier forma inesperada en vez de lanzar — el `orderId` es solo para correlacionar, no crítico para que el comando en sí funcione).
+- `command_feedback.py` (nuevo): `CommandFeedbackMixin` compartido por `climate.py`/`switch.py` — captura el `orderId` de cada comando enviado, escucha `mysair_feedback`, loguea confirmación si llega a tiempo o aviso si no llega en `FEEDBACK_TIMEOUT_SECONDS` (5 s, `const.py`, valor tomado tal cual de `VUE_APP_OUTSERVICE_MILISECOND` de la app oficial).
+- **Deliberadamente NO implementado en esta tarea:** revertir el estado optimista si no llega confirmación (la segunda mitad de E7). Motivo: la forma exacta del payload de `feedback` no está confirmada con una captura real; mutar estado de la UI en base a un parseo no validado es más arriesgado que solo loguearlo. Revisar `known-unknowns.md` #23 antes de dar ese paso.
+- Tests: 4 nuevos P0 (`parse_feedback_payload`, `build_feedback_topic`, `extract_order_id`) + 5 nuevos P2 (`test_entities.py`: confirmación climate/switch, filtro por `ctl`, timeout). 122 tests verdes en total.
+- `manifest.json`: `2.1.0` → `2.2.0` (aditivo).
+
 ### Pendiente (no bloqueado, siguiente)
-- Features desde hallazgos: sensor de humedad (`hm`), ventilador (`fanspeed`/`vv`), disponibilidad heat/cool (`c`/`f`).
+- E7 parte 2: revertir estado optimista — requiere validar en producción la forma real del payload de `feedback` (#23).
+- F2: velocidad de ventilador — bloqueado por #24 (significado de `vv`).
+- F5: servicio `mysair.stop_installation`. F6: temporizador/programas (más especulativo).
 - Robustez del parser de frame MQTT (#6, requiere dump real).
 - Traducciones/`strings.json` (C4) — desbloquearía poder reclamar `quality_scale` de nuevo.

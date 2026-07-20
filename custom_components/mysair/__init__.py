@@ -6,7 +6,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from .api import MySairAPI, MySairAuthError, MySairConnectionError
 from .mqtt_handler import MySairMQTTClient
-from .status_parser import parse_status_payload
+from .status_parser import parse_status_payload, parse_feedback_payload
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -106,6 +106,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     {"topic": topic, "data": parsed_data},
                 )
                 _LOGGER.debug(f"[MySair MQTT] 🧩 Estado parseado: {parsed_data}")
+
+            # Confirmación (ACK) de una instrucción enviada por HTTP (E7,
+            # docs/protocol-findings.md §8). Evento propio, no mysair_update.
+            elif topic.endswith("/feedback"):
+                feedback = parse_feedback_payload(payload)
+                _LOGGER.info(
+                    f"[MySair MQTT] ✅ Confirmación recibida: orderId={feedback['order_id']} "
+                    f"ctl={feedback['ctl']}"
+                )
+                hass.loop.call_soon_threadsafe(
+                    hass.bus.async_fire,
+                    f"{DOMAIN}_feedback",
+                    feedback,
+                )
 
             else:
                 # Otros mensajes (no status)

@@ -67,7 +67,7 @@
 | E4 | Validación de esquema de payloads (rechazar/loguear los inesperados). | 🟡 |
 | E5 | Evaluar `client_id` propio distinto del de la app oficial para evitar expulsiones (`known-unknowns` #20). | 🟠 |
 | E6 | Evaluar migrar a `paho-mqtt` (ya declarado) sobre WebSocket con SigV4, reduciendo código artesanal. | 🟡 |
-| E7 | Reconciliación de estado optimista con timeout (revertir si no llega confirmación MQTT). | 🟡 |
+| E7 | Reconciliación de estado optimista con timeout (revertir si no llega confirmación MQTT). | 🟠 Infraestructura hecha (suscripción a `feedback`, correlación por `orderId`, log de confirmación/timeout). **Revertir el estado** queda pendiente de validar el payload real en producción (`known-unknowns` #23). |
 
 ---
 
@@ -76,10 +76,11 @@
 | # | Tarea | Prio |
 |---|---|---|
 | F1 | Sensor de humedad (`hm`) y disponibilidad real de heat/cool en `climate.hvac_modes` según capacidades (`c`/`f`). | ✅ Hecho |
-| F2 | Exponer velocidad de ventilador / apertura de compuerta si existen en el protocolo (`known-unknowns` §2). | 🟢 |
+| F2 | Exponer velocidad de ventilador (`fanspeed`/`vv`). **Bloqueado**: no confirmado el significado de los valores de `vv` (`known-unknowns` #23) — sí hay una pista sin confirmar en el JS (grupos `manual:["1","2","3"]` / `auto:["A"]"` de la UI, ver `protocol-findings.md §8`), pero no alcanza para implementarlo sin más investigación. | 🟢 |
 | F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | 🟢 |
 | F4 | `select` de modo reescrito y funcional. | 🟢 |
-| F5 | Servicios propios (p. ej. forzar sync) si aportan valor. | 🟢 |
+| F5 | Servicios propios: `mysair.stop_installation` (comando `stop`, ya documentado, `value:"1"`) si aporta valor sobre apagar zona por zona. | 🟢 |
+| F6 | Temporizador (`temporizer`) y programas (`programs`) — mucho más trabajo (entidades nuevas fuera de climate/sensor/switch) y valores de parámetros sin confirmar. Más especulativo de la lista. | 🟢 |
 
 ---
 

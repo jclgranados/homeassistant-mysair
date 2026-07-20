@@ -2,6 +2,7 @@ import logging
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import callback
 
+from .command_feedback import CommandFeedbackMixin
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     _LOGGER.info(f"[MySair Switch] ✅ {len(entities)} switches creados.")
 
 
-class MySairSwitch(SwitchEntity):
+class MySairSwitch(CommandFeedbackMixin, SwitchEntity):
     """Entidad Switch para encender o apagar cada termostato MySair."""
 
     _attr_icon = "mdi:power"
@@ -41,6 +42,7 @@ class MySairSwitch(SwitchEntity):
         # Por defecto calor (encender NUNCA debe forzar frío). Ver docs/protocol-findings.md.
         self._last_ac_mode = "0"
         self._unsub = None
+        self._init_command_feedback()
 
     @property
     def device_info(self):
@@ -61,7 +63,7 @@ class MySairSwitch(SwitchEntity):
             # Encender = enviar comando 'mode' (no existe power "1"). Preservamos el
             # último modo calor/frío conocido; por defecto calor. Ver docs/protocol-findings.md.
             _LOGGER.info(f"[MySair Switch] 🔛 Encendiendo {self.name} (modo {self._last_ac_mode})")
-            await self.hass.async_add_executor_job(
+            response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,
                 self.device_id,
@@ -69,6 +71,7 @@ class MySairSwitch(SwitchEntity):
                 self._last_ac_mode,
                 22.0
             )
+            self._track_command_confirmation(response)
             self._is_on = True
             self.async_write_ha_state()
         except Exception as e:
@@ -77,12 +80,13 @@ class MySairSwitch(SwitchEntity):
     async def async_turn_off(self, **kwargs):
         try:
             _LOGGER.info(f"[MySair Switch] ⛔ Apagando {self.name}")
-            await self.hass.async_add_executor_job(
+            response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,
                 self.device_id,
                 "power"
             )
+            self._track_command_confirmation(response)
             self._is_on = False
             self.async_write_ha_state()
         except Exception as e:
@@ -90,11 +94,13 @@ class MySairSwitch(SwitchEntity):
 
     async def async_added_to_hass(self):
         self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+        self._start_feedback_listener()
 
     async def async_will_remove_from_hass(self):
         if self._unsub:
             self._unsub()
             self._unsub = None
+        self._stop_feedback_listener()
 
     @callback
     def _handle_mqtt_update(self, event):
