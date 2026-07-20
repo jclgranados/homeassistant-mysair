@@ -195,8 +195,14 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **`client_id` MQTT único** por conexión (#20; antes `aws_mqtt_user` → expulsiones con la app).
 - ✅ **Refresco de credenciales AWS por `aws_expires_at`** en cada reconexión (#22; antes reutilizaba firma caducada).
 - ✅ **Topic desde `aws_base_topic`** con fallback (#5); log de conexión ya no filtra la URL firmada.
+- ✅ **Validado en producción** (2026-07-20) contra una cuenta real: descubrimiento, MQTT (client_id único sin expulsar la app oficial) y estado en tiempo real funcionan correctamente.
+- ✅ **`password` ya no se guarda en claro** (A6): la config entry solo persiste `email` + `refresh_token`; la sesión se renueva en cada arranque con `MySairAPI.refresh_tokens()`. Migración automática elimina `password`/`access_token` de entradas antiguas en el primer arranque tras actualizar.
+- ✅ **`unique_id`** en la config entry (C2): evita añadir la misma cuenta dos veces.
+- ✅ **Reauth flow** (C3): `ConfigEntryAuthFailed`/`ConfigEntryNotReady` en `async_setup_entry` + `async_step_reauth` en `config_flow.py`. Camino de reauth no probado todavía en producción (ver `docs/execution-plan.md` Tarea 9).
 
 Pendientes:
-- 🟠 **`password` en claro** en la config entry (`config_flow.py`) — A6/C3 (reauth).
 - 🟡 **Parser de frame MQTT frágil** (#6, requiere dump real de bytes).
-- 🟡 **Solo primera `Location`** (#15, multi-location).
+- 🟡 **Tests de `config_flow.py`/`__init__.py`** (unique_id, reauth, `ConfigEntryAuthFailed`/`NotReady`) sin harness de HA — requiere `pytest-homeassistant-custom-component` + Python ≥3.12, no disponibles en este entorno.
+
+Decisiones de alcance (no son bugs):
+- **Solo primera `Location`** (#15) — soportar varias `Location` queda deliberadamente fuera de alcance.
