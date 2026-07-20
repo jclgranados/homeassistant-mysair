@@ -1,7 +1,7 @@
 {
   "domain": "mysair",
   "name": "MySair",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "documentation": "https://github.com/jclgranados/homeassistant-mysair",
   "issue_tracker": "https://github.com/jclgranados/homeassistant-mysair/issues",
   "config_flow": true,
@@ -13,7 +13,6 @@
     "requests>=2.31.0",
     "websocket-client==1.8.0"
   ],
-  "quality_scale": "silver",
   "loggers": ["mysair"],
   "homeassistant": "2025.10.0"
 }
