@@ -1,5 +1,6 @@
 import requests
 import datetime
+import time
 import hmac
 import hashlib
 import urllib.parse
@@ -119,7 +120,9 @@ class MySairAPI:
             if not all(k in entity for k in required_keys):
                 raise Exception("Credenciales AWS incompletas o inválidas")
 
-            # Normalizar nombres para mqtt_handler
+            # Normalizar nombres para mqtt_handler.
+            # aws_base_topic y aws_expires_at son opcionales (pueden no venir en
+            # APIs antiguas); se usan para el topic dinámico y el refresco proactivo.
             self.aws_credentials = {
                 "aws_mqtt_host": entity["aws_mqtt_host"],
                 "aws_default_region": entity["aws_default_region"],
@@ -127,6 +130,8 @@ class MySairAPI:
                 "aws_secret_access_key": entity["aws_secret_access_key"],
                 "aws_security_token": entity["aws_security_token"],
                 "aws_mqtt_user": entity["aws_mqtt_user"],
+                "aws_base_topic": entity.get("aws_base_topic"),
+                "aws_expires_at": entity.get("aws_expires_at"),
             }
 
             _LOGGER.info(f"[MySairAPI] ✅ Credenciales AWS obtenidas para usuario {entity['aws_mqtt_user']}")
@@ -135,6 +140,24 @@ class MySairAPI:
         except Exception as e:
             _LOGGER.error(f"[MySairAPI] ❌ Error al obtener credenciales AWS: {e}")
             raise
+
+    def aws_credentials_expired(self, margin_seconds=60):
+        """Indica si conviene refrescar las credenciales AWS antes de (re)conectar.
+
+        Devuelve True si faltan credenciales o si expiran en menos de
+        ``margin_seconds``. Usa ``aws_expires_at`` (unix s) cuando está presente;
+        si no hay información de expiración, no fuerza refresco por tiempo.
+        Confirmado desde la app oficial (ver docs/protocol-findings.md).
+        """
+        if not self.aws_credentials:
+            return True
+        expires_at = self.aws_credentials.get("aws_expires_at")
+        if not expires_at:
+            return False
+        try:
+            return time.time() >= float(expires_at) - margin_seconds
+        except (TypeError, ValueError):
+            return False
 
     # ==========================================================
     # 📍 LOCATIONS / INSTALLATIONS / DEVICES
