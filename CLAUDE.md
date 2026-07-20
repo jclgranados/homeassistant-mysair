@@ -41,13 +41,17 @@ Detalle completo: `docs/architecture.md`. **Los comandos van por HTTP, el estado
 
 ## 3. Comandos
 
-Este repo **no tiene** entorno, tests, lint ni CI configurados todavía. Convenciones recomendadas (aún no presentes):
+Lint y CI todavía no están configurados. Tests, sí, en dos niveles:
 
 ```bash
-# Tests P0/P1 (NO requieren Home Assistant): se ejecutan tal cual
+# Tests P0/P1 (NO requieren Home Assistant, Python 3.9+, en la máquina local)
 python -m venv .venv-test && source .venv-test/bin/activate
 pip install -r requirements-test.txt
-pytest                      # 42 tests: parser, builders MQTT, firma SigV4, cliente HTTP
+pytest                      # ~79 tests: parser, builders MQTT, firma SigV4, cliente HTTP
+                             # (los ficheros P2 se saltan aquí vía pytest.importorskip)
+
+# Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
+docker compose run --rm test-ha    # 103 tests en total (P0/P1 + config flow + setup/unload + entidades)
 
 # Lint / formato (recomendado: ruff; aún no configurado en el repo)
 ruff check custom_components/mysair tests
@@ -57,9 +61,11 @@ ruff format custom_components/mysair tests
 - Los tests **puros** (parser, builders MQTT, firma SigV4, `MySairAPI` con `session` inyectada)
   corren sin HA porque `tests/conftest.py` añade `custom_components/mysair` a `sys.path` e importa
   esos módulos como top-level (no ejecutan el `__init__.py` del paquete).
-- Los tests con **harness de HA** (config flow, setup/unload, entidades) están pendientes:
-  requieren `homeassistant` + `pytest-homeassistant-custom-component` (Python ≥3.12). Ver
-  `docs/testing-strategy.md` y `docs/execution-plan.md`.
+- Los tests con **harness de HA** (`test_config_flow.py`, `test_init_setup_unload.py`,
+  `test_entities.py`) requieren `homeassistant` + `pytest-homeassistant-custom-component`
+  (Python ≥3.12), instalados solo dentro de `Dockerfile.test` — no en el entorno local. PyPI no
+  publica `homeassistant` más reciente que `2025.1.4` (techo conocido del ecosistema, no de este
+  repo). Ver `docs/testing-strategy.md`.
 
 > ⚠️ **Nunca** ejecutes el código contra servidores reales de MySair para "probar".
 
@@ -171,6 +177,14 @@ Los tests y la documentación están en la raíz del repo.
 - [ ] Mensaje de commit descriptivo.
 - [ ] Rama distinta de `main` si se pedirá PR (no commitear en `main` sin permiso del usuario).
 
+### Flujo de ramas (origin)
+
+Solo existen `main` y `develop` en `origin`; no dejar ramas de feature huérfanas tras el merge.
+
+1. Crear una rama de feature corta **desde `develop`** (nombre descriptivo, p. ej. `mqtt-robustness`).
+2. Commits + PR **contra `develop`**; borrar la rama al fusionar (`gh pr merge --delete-branch` o equivalente).
+3. `develop` se fusiona contra `main` **cuando el usuario lo pida o lo considere necesario** (release), no automáticamente en cada PR.
+
 ---
 
 ## 10. Enlaces a la documentación generada
@@ -203,10 +217,12 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **`password` ya no se guarda en claro** (A6): la config entry solo persiste `email` + `refresh_token`; la sesión se renueva en cada arranque con `MySairAPI.refresh_tokens()`. Migración automática elimina `password`/`access_token` de entradas antiguas en el primer arranque tras actualizar.
 - ✅ **`unique_id`** en la config entry (C2): evita añadir la misma cuenta dos veces.
 - ✅ **Reauth flow** (C3): `ConfigEntryAuthFailed`/`ConfigEntryNotReady` en `async_setup_entry` + `async_step_reauth` en `config_flow.py`. Camino de reauth no probado todavía en producción (ver `docs/execution-plan.md` Tarea 9).
+- ✅ **Tests de `config_flow.py`/`__init__.py`** con harness real de HA (unique_id, reauth, `ConfigEntryAuthFailed`/`NotReady`, migración A6, unload) vía Docker (`docker compose run --rm test-ha`) — no requiere instalar nada en la máquina del desarrollador. Ver `docs/execution-plan.md` Tarea 12 y `docs/testing-strategy.md`.
+- ✅ **Tests de entidades y eventos MQTT** (climate/sensor/switch reaccionando a `mysair_update`, comandos, filtro por `ctl`) — `tests/test_entities.py`, ver `docs/execution-plan.md` Tarea 13.
 
 Pendientes:
 - 🟡 **Parser de frame MQTT frágil** (#6, requiere dump real de bytes).
-- 🟡 **Tests de `config_flow.py`/`__init__.py`** (unique_id, reauth, `ConfigEntryAuthFailed`/`NotReady`) sin harness de HA — requiere `pytest-homeassistant-custom-component` + Python ≥3.12, no disponibles en este entorno.
+- 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente).
 
 Decisiones de alcance (no son bugs):
 - **Solo primera `Location`** (#15) — soportar varias `Location` queda deliberadamente fuera de alcance.

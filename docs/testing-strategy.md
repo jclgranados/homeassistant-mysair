@@ -1,10 +1,47 @@
 # Estrategia de tests
 
-> Estado actual: **no existen tests, fixtures ni configuración de test**. **Confirmado.**
+> Documento originalmente escrito como propuesta antes de implementar nada; se
+> mantiene en presente/futuro como registro del razonamiento, con notas "✅
+> Implementado" donde ya existe. Estado actual real: **103 tests** (78 P0/P1
+> sin HA + 25 P2 con harness de HA vía Docker). Ver `docs/execution-plan.md`
+> Tareas 5, 12 y 13.
 
 ---
 
-## 1. Situación actual
+## 0. Cómo ejecutar los tests (actualizado)
+
+**P0/P1 (sin Home Assistant, Python 3.9+, en la máquina del desarrollador):**
+```bash
+python -m venv .venv-test && source .venv-test/bin/activate
+pip install -r requirements-test.txt
+pytest
+```
+
+**P2 (con harness de Home Assistant, vía Docker — no instala nada en tu máquina):**
+```bash
+docker compose run --rm test-ha
+```
+Requiere Docker. La imagen (`Dockerfile.test`) instala Python 3.12 +
+`pytest-homeassistant-custom-component` (`requirements-test-ha.txt`) en un
+contenedor aislado; el código se monta como volumen, así que no hay que
+reconstruir la imagen al editar tests o código.
+
+> ⚠️ **Techo de versión conocido:** PyPI no publica `homeassistant` más allá de
+> `2025.1.4` (más antiguo que el `2025.10.0` mínimo declarado en
+> `manifest.json`); `pytest-homeassistant-custom-component` fija esa versión
+> internamente. Las APIs que usamos (`ConfigEntryAuthFailed`,
+> `_get_reauth_entry`, `async_update_reload_and_abort`, `async_set_unique_id`)
+> ya existían en 2025.1.4, así que los tests siguen siendo válidos, pero no
+> validan contra la versión mínima exacta que declaramos soportar.
+
+Ambos conjuntos conviven en el mismo directorio `tests/`: los ficheros P2
+(`test_config_flow.py`, `test_init_setup_unload.py`, `test_ha_harness_smoke.py`)
+usan `pytest.importorskip("homeassistant")`, así que al correr `pytest` sin
+Docker se saltan limpiamente en vez de fallar.
+
+---
+
+## 1. Situación previa (antes de este trabajo)
 
 | Elemento | Estado |
 |---|---|
@@ -91,13 +128,15 @@ tests/
 | `refresh_aws_credentials` incompleto | Falta una `aws_*` key → excepción |
 | `send_zone_command` mode/temp/power | Construcción correcta del `value` por tipo |
 
-### P1 — Config flow (harness HA)
+### P1 — Config flow (harness HA) — ✅ Implementado (`tests/test_config_flow.py`)
 | Test | Escenario |
 |---|---|
-| Flujo feliz | login OK → `async_create_entry` con datos |
-| Auth inválida | login sin token → error `invalid_auth` |
-| Fallo de conexión | excepción en login → error `cannot_connect` |
-| (Futuro) unique_id | evitar duplicados (tras arreglar el bug) |
+| Flujo feliz | login OK → `async_create_entry` con `email` + `refresh_token` (sin password) |
+| Auth inválida | `MySairAuthError` → error `invalid_auth` |
+| Fallo de conexión | `MySairConnectionError` → error `cannot_connect` |
+| unique_id duplicado | misma cuenta (email normalizado) → abort `already_configured` |
+| Reauth feliz | `async_step_reauth_confirm` → `refresh_token` actualizado, abort `reauth_successful` |
+| Reauth con credenciales inválidas | error `invalid_auth`, `refresh_token` no se toca |
 
 ### P2 — MQTT (sin broker real)
 | Test | Escenario |
@@ -113,20 +152,36 @@ tests/
 | Mensaje fuera de orden | `status` con consigna vieja tras una nueva → documentar comportamiento actual (sobrescribe) |
 | Frame partido | (Documentar limitación: hoy no se soporta) |
 
-### P2 — Entidades y ciclo de vida (harness HA)
+### P2 — Ciclo de vida del setup (harness HA) — ✅ Implementado (`tests/test_init_setup_unload.py`)
 | Test | Escenario |
 |---|---|
-| Setup entry | Con HTTP mockeado, crea N entidades por zona |
-| `mysair_update` → climate | Actualiza current/target temp y hvac_mode/action según `e` |
-| `mysair_update` → sensores | Actualizan native_value; no reescriben si igual |
-| `mysair_update` → switch | `is_on` según `mode in [1,2]` |
-| Comando climate set_hvac_mode | Llama `send_zone_command` con args correctos; estado optimista |
-| Comando set_temperature en OFF | No envía comando, solo local |
-| Comando switch on/off | Envía mode/power correctos |
-| Filtro por `ctl`/`zone_id` | Evento de otra instalación no afecta a la entidad |
-| Unload (**tras arreglar bug**) | MQTT parado, tarea cancelada, `hass.data` limpio |
-| Reload (**tras arreglar bug**) | Sin tareas duplicadas |
+| Setup entry feliz | `refresh_tokens` OK + HTTP mockeado → entry `LOADED`, entidades creadas, `refresh_token` rotado persistido |
+| Migración A6 | Entry con `password`/`access_token` heredados de antes → se eliminan en el primer setup correcto |
+| Sin `refresh_token` guardado | Setup falla, entry `SETUP_ERROR` (dispara reauth) |
+| Sesión inválida (`MySairAuthError`) | Setup falla, entry `SETUP_ERROR` (dispara reauth) |
+| Fallo de conexión (`MySairConnectionError`) | Setup falla, entry `SETUP_RETRY` (HA reintenta solo) |
+| Sin ubicaciones / sin instalaciones | Setup falla, entry `SETUP_RETRY` |
+| Unload | MQTT `stop()` llamado, `hass.data[DOMAIN]` limpio, entry `NOT_LOADED` |
+
+### P2 — Entidades y eventos MQTT (harness HA) — ✅ Implementado (`tests/test_entities.py`)
+| Test | Escenario |
+|---|---|
+| `mysair_update` → climate | Actualiza current/target temp y hvac_mode/action según `is_on`/`is_cool`/`is_heat`/`is_standby` |
+| `mysair_update` → climate (off/standby) | OFF si `is_on=False`; standby → `HVACAction.IDLE` con modo preservado |
+| `mysair_update` → sensores | Actualizan native_value (temp actual, consigna, modo OFF/HEAT/COOL) |
+| `mysair_update` → switch | `is_on` según `is_on`; recuerda el último modo AC (`mode_raw`) |
+| Filtro por `ctl` | Evento de otra instalación no afecta a la entidad |
+| Comando climate set_hvac_mode | Llama `send_zone_command` con `mode`/`0`|`1` y la consigna actual |
+| Comando set_temperature en OFF | No envía comando, solo actualiza estado local |
+| Comando switch on/off | Envía `mode` (preservando último modo AC) / `power` |
+| Switch preserva modo tras MQTT | `turn_on` reusa el `mode_raw` recibido por MQTT, no fuerza calor |
+
+### P2 — Pendiente
+| Test | Escenario |
+|---|---|
+| Reload | Sin tareas duplicadas |
 | Credenciales caducadas | 401 en comando → refresh y reintento |
+| Mensaje duplicado / fuera de orden | Ver tabla P3 más abajo |
 
 ### P3 — Escenarios avanzados / robustez
 | Test | Escenario |
