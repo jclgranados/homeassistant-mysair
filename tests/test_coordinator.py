@@ -22,7 +22,8 @@ from test_entities import _patch_happy_api, _fire_status, _zone
 async def _setup_entry(hass, monkeypatch):
     _patch_happy_api(monkeypatch)
     entry = MockConfigEntry(
-        domain=DOMAIN, unique_id="user@example.com",
+        domain=DOMAIN,
+        unique_id="user@example.com",
         data={"email": "user@example.com", "refresh_token": "OLD_REFRESH"},
     )
     entry.add_to_hass(hass)
@@ -36,7 +37,9 @@ async def test_coordinator_ignores_ctl_not_in_installation_refs(hass, monkeypatc
 
     received = []
     async_dispatcher_connect(
-        hass, signal_zone_update("OTHER_INST", "DEV_1"), lambda zone: received.append(zone)
+        hass,
+        signal_zone_update("OTHER_INST", "DEV_1"),
+        lambda zone: received.append(zone),
     )
 
     _fire_status(hass, "OTHER_INST", _zone())
@@ -45,16 +48,22 @@ async def test_coordinator_ignores_ctl_not_in_installation_refs(hass, monkeypatc
     assert received == []
 
 
-async def test_coordinator_dispatches_each_zone_independently_for_multi_zone_message(hass, monkeypatch):
+async def test_coordinator_dispatches_each_zone_independently_for_multi_zone_message(
+    hass, monkeypatch
+):
     await _setup_entry(hass, monkeypatch)
 
     received_dev1 = []
     received_dev2 = []
     async_dispatcher_connect(
-        hass, signal_zone_update("INST_A", "DEV_1"), lambda zone: received_dev1.append(zone)
+        hass,
+        signal_zone_update("INST_A", "DEV_1"),
+        lambda zone: received_dev1.append(zone),
     )
     async_dispatcher_connect(
-        hass, signal_zone_update("INST_A", "DEV_2"), lambda zone: received_dev2.append(zone)
+        hass,
+        signal_zone_update("INST_A", "DEV_2"),
+        lambda zone: received_dev2.append(zone),
     )
 
     hass.bus.async_fire(
@@ -63,7 +72,10 @@ async def test_coordinator_dispatches_each_zone_independently_for_multi_zone_mes
             "topic": "pro/v1/get/ctl/INST_A/status",
             "data": {
                 "ctl": "INST_A",
-                "zones": [_zone(zone_id="DEV_1"), _zone(zone_id="DEV_2", temp_actual=19.0)],
+                "zones": [
+                    _zone(zone_id="DEV_1"),
+                    _zone(zone_id="DEV_2", temp_actual=19.0),
+                ],
             },
         },
     )
@@ -83,7 +95,10 @@ async def test_coordinator_ignores_non_status_topic(hass, monkeypatch):
 
     hass.bus.async_fire(
         f"{DOMAIN}_update",
-        {"topic": "pro/v1/get/usr/web0077/feedback", "data": {"ctl": "INST_A", "zones": [_zone()]}},
+        {
+            "topic": "pro/v1/get/usr/web0077/feedback",
+            "data": {"ctl": "INST_A", "zones": [_zone()]},
+        },
     )
     await hass.async_block_till_done()
 

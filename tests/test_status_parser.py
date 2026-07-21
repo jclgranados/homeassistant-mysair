@@ -18,6 +18,7 @@ from status_parser import (
 
 # --- parse_status_value ---
 
+
 def test_parse_status_value_string_with_trailing_semicolon():
     assert parse_status_value('{"a":1};') == {"a": 1}
 
@@ -46,16 +47,17 @@ def test_parse_status_value_json_non_object_returns_empty():
 
 # --- parse_mode ---
 
+
 @pytest.mark.parametrize(
     "m,expected",
     [
-        ("0", ("0", True, False, True, False)),   # AC calor
-        ("1", ("1", False, True, True, False)),   # AC frío
-        ("2", ("2", True, False, False, True)),   # suelo calor
-        ("3", ("3", False, True, False, True)),   # suelo frío
-        ("4", ("4", True, False, True, True)),    # AC+suelo calor
-        ("5", ("5", False, True, True, True)),    # AC+suelo frío
-        (0, ("0", True, False, True, False)),     # int también válido
+        ("0", ("0", True, False, True, False)),  # AC calor
+        ("1", ("1", False, True, True, False)),  # AC frío
+        ("2", ("2", True, False, False, True)),  # suelo calor
+        ("3", ("3", False, True, False, True)),  # suelo frío
+        ("4", ("4", True, False, True, True)),  # AC+suelo calor
+        ("5", ("5", False, True, True, True)),  # AC+suelo frío
+        (0, ("0", True, False, True, False)),  # int también válido
     ],
 )
 def test_parse_mode_values(m, expected):
@@ -72,15 +74,16 @@ def test_parse_mode_non_numeric():
 
 # --- compute_mode_value (F4, inversa de parse_mode) ---
 
+
 @pytest.mark.parametrize(
     "is_heat,is_ac,is_floor,expected",
     [
-        (True, True, False, "0"),   # AC calor
+        (True, True, False, "0"),  # AC calor
         (False, True, False, "1"),  # AC frío
-        (True, False, True, "2"),   # suelo calor
+        (True, False, True, "2"),  # suelo calor
         (False, False, True, "3"),  # suelo frío
-        (True, True, True, "4"),    # AC+suelo calor
-        (False, True, True, "5"),   # AC+suelo frío
+        (True, True, True, "4"),  # AC+suelo calor
+        (False, True, True, "5"),  # AC+suelo frío
     ],
 )
 def test_compute_mode_value_matches_confirmed_table(is_heat, is_ac, is_floor, expected):
@@ -100,6 +103,7 @@ def test_compute_mode_value_forces_ac_when_neither_medium_active():
 
 
 # --- parse_status_payload ---
+
 
 def test_parse_status_payload_full(status_payload):
     result = parse_status_payload(status_payload)
@@ -199,7 +203,10 @@ def test_parse_status_payload_default_power_off_when_missing_e():
 
 
 def test_parse_status_payload_invalid_value_yields_no_zones():
-    assert parse_status_payload({"ctl": "X", "value": "no-json"}) == {"ctl": "X", "zones": []}
+    assert parse_status_payload({"ctl": "X", "value": "no-json"}) == {
+        "ctl": "X",
+        "zones": [],
+    }
 
 
 def test_parse_status_payload_missing_value():
@@ -258,9 +265,14 @@ def test_parse_status_payload_skips_non_dict_thermostats():
 
 # --- parse_feedback_payload (topic .../feedback, known-unknowns #23) ---
 
+
 def test_parse_feedback_payload_flat_form():
     payload = {"orderId": "abc-123", "ctl": "INST_A"}
-    assert parse_feedback_payload(payload) == {"order_id": "abc-123", "ctl": "INST_A", "raw": payload}
+    assert parse_feedback_payload(payload) == {
+        "order_id": "abc-123",
+        "ctl": "INST_A",
+        "raw": payload,
+    }
 
 
 def test_parse_feedback_payload_nested_value_fallback():

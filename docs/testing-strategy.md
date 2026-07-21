@@ -2,8 +2,8 @@
 
 > Documento originalmente escrito como propuesta antes de implementar nada; se
 > mantiene en presente/futuro como registro del razonamiento, con notas "✅
-> Implementado" donde ya existe. Estado actual real (2026-07-21): **226 tests**
-> (157 P0/P1 sin HA + 69 P2 con harness de HA vía Docker). Ver
+> Implementado" donde ya existe. Estado actual real (2026-07-21): **229 tests**
+> (157 P0/P1 sin HA + 72 P2 con harness de HA vía Docker). Ver
 > `docs/execution-plan.md` (28 tareas) para el detalle completo de cada tanda;
 > las referencias puntuales de más abajo solo cubren las tareas que crearon
 > la cobertura original (5, 12, 13) y no se han mantenido actualizadas tarea
@@ -188,20 +188,21 @@ tests/
 ### P2 — Pendiente
 | Test | Escenario |
 |---|---|
-| Reload | Sin tareas duplicadas |
 | Mensaje duplicado / fuera de orden | Ver tabla P3 más abajo |
 
 > ✅ **"Credenciales caducadas: 401 en comando → refresh y reintento"** ya está implementado y testeado
 > (`test_send_instruction_401_refreshes_and_retries` en `test_api.py`) — quitado de esta tabla.
+> ✅ **"Reload"** ya está implementado y testeado (`test_reload_entry_does_not_duplicate_entities_or_service`
+> en `test_init_setup_unload.py`, Tarea 30) — quitado de esta tabla.
 
 ### P3 — Escenarios avanzados / robustez
 | Test | Escenario | Estado |
 |---|---|---|
 | Payload incompleto | `t[]` sin `tr`/`tc` → campo queda `None` (no `0.0`: corregido, la implementación real usa `_to_float` que devuelve `None` ante valores ausentes/no convertibles) | ✅ Implementado (comportamiento ya cubierto en `test_status_parser.py`) |
 | Payload desconocido | Campos extra ignorados sin error | ✅ Implementado (E4, Tarea 26): deliberadamente permisivo ante claves nuevas del backend, ver `known-unknowns.md` |
-| Migración de config | `async_migrate_entry` (cuando exista VERSION>1) | 🔴 Pendiente (no ha hecho falta todavía; la única migración real hasta ahora, A6, se hace a mano en `async_setup_entry`, no vía `async_migrate_entry`) |
-| Cambio de topología | Zona nueva/eliminada entre reinicios → entidades huérfanas (documentar) | 🔴 Pendiente |
-| Varios sistemas en una cuenta | 2 instalaciones → suscripción y entidades por cada una | 🔴 Pendiente (validado manualmente en producción con 1 instalación; multi-instalación dentro de una misma `Location` no tiene test dedicado) |
+| Migración de config | `async_migrate_entry` (cuando exista VERSION>1) | 🔴 Pendiente (no ha hecho falta todavía; la única migración real hasta ahora, A6, se hace a mano en `async_setup_entry`, no vía `async_migrate_entry`; con `VERSION` todavía en `1` no hay nada a lo que migrar, ver Tarea 30) |
+| Cambio de topología | Zona nueva/eliminada entre reinicios → entidades huérfanas (documentar) | ✅ Implementado (Tarea 30, `test_topology_change_orphans_removed_zone_entity`) — confirma que la zona eliminada queda huérfana en el `entity_registry` (no se limpia sola) mientras la nueva zona funciona con normalidad; documenta el comportamiento actual, no lo arregla |
+| Varios sistemas en una cuenta | 2 instalaciones → suscripción y entidades por cada una | ✅ Implementado (Tarea 30, `test_setup_entry_multiple_installations`) |
 | Sin ubicaciones | `get_locations` `[]` → setup `return False` | ✅ Implementado (`test_init_setup_unload.py`, aunque el comportamiento real hoy es `ConfigEntryNotReady`, no `return False`) |
 
 ---

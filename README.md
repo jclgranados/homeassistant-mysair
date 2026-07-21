@@ -77,6 +77,14 @@ Tests P2 (config flow, setup/unload) usan un harness real de Home Assistant, ví
 docker compose run --rm test-ha
 ```
 
+Lint y formato con `ruff` (config en `pyproject.toml`, reglas por defecto):
+
+```bash
+pip install -r requirements-lint.txt
+ruff check custom_components/mysair tests
+ruff format custom_components/mysair tests
+```
+
 Issues y pull requests son bienvenidos. Revisa `CLAUDE.md` antes de tocar el protocolo o las credenciales.
 
 ## Changelog

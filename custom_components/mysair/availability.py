@@ -56,4 +56,6 @@ class AvailabilityMixin:
     def available(self):
         if self._last_status_at is None:
             return False
-        return dt_util.utcnow() - self._last_status_at < timedelta(seconds=MQTT_STALE_AFTER_SECONDS)
+        return dt_util.utcnow() - self._last_status_at < timedelta(
+            seconds=MQTT_STALE_AFTER_SECONDS
+        )

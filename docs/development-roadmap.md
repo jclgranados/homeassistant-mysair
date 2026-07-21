@@ -26,8 +26,8 @@
 | B1 | Refactor de testabilidad: extraer `parse_status_payload`, inyectar `requests.Session`. | ✅ Hecho |
 | B2 | Añadir `pytest` + `pytest-homeassistant-custom-component` + fixtures sanitizadas (`docs/testing-strategy.md`). | ✅ Hecho |
 | B3 | Tests P0/P1 (funciones puras, HTTP, config flow). | ✅ Hecho |
-| B4 | Tests P2/P3 (MQTT, entidades, unload/reload) tras Fase A. | 🟠 P2 hecho (config flow, setup/unload, entidades). P3 parcial: frames parciales/multi-paquete ya cubiertos por E2 (Tarea 26), pero con bytes sintéticos, no una captura real; reconexión y mensajes duplicados/fuera de orden siguen sin tests. |
-| B5 | CI GitHub Actions: `hassfest`, `pytest` (P0/P1 + P2 vía Docker). | ✅ Hecho (`ruff` queda fuera: no configurado en el repo todavía) |
+| B4 | Tests P2/P3 (MQTT, entidades, unload/reload) tras Fase A. | 🟡 P2 hecho (config flow, setup/unload, entidades). P3: reload, varias instalaciones y cambio de topología cubiertos (Tarea 30, sin necesitar captura real); frames parciales/multi-paquete cubiertos por E2 (Tarea 26) con bytes sintéticos. Quedan sin tests: mensajes duplicados/fuera de orden, y confirmar con tráfico real E1/E2/frames — todos necesitan una captura de producción. |
+| B5 | CI GitHub Actions: `hassfest`, `pytest` (P0/P1 + P2 vía Docker), `ruff`. | ✅ Hecho (2026-07-21) — 4º job `ruff` añadido tras comprobar en local que las reglas por defecto solo daban 8 hallazgos triviales (ver Tarea 30); reglas más estrictas quedan como posible ampliación futura. |
 
 ---
 

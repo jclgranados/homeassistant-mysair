@@ -1,0 +1,11 @@
+[tool.ruff]
+# Mínimo real del entorno de desarrollo local (ver README/CLAUDE.md); CI y
+# Docker usan 3.12, pero el código debe seguir siendo válido en 3.9+.
+target-version = "py39"
+
+[tool.ruff.lint]
+# Conjunto de reglas por defecto (E4, E7, E9, F) únicamente. Deliberado: no
+# se añaden categorías más estrictas (I, UP, B, SIM, ...) todavía — hacerlo
+# sin triar antes los hallazgos mezclaría "activar ruff" con "una ola de
+# limpieza sin revisar" (ver docs/execution-plan.md Tarea 30). Ampliar el
+# ruleset queda como posible tarea futura, aparte.
