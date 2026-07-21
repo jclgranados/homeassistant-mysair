@@ -25,8 +25,14 @@ async def async_setup_entry(hass, entry, async_add_entities):
             dev_id = dev.get("reference") or dev.get("rf") or dev.get("id")
             name = dev.get("name", f"Zona {dev_id} (Power)")
             zone_name = dev.get("name", f"Zona {dev_id}")
-            entities.append(MySairSwitch(hass, api, mqtt_client, inst_ref, dev_id, name))
-            entities.append(MySairFloorSwitch(hass, api, mqtt_client, inst_ref, dev_id, f"{zone_name} Suelo"))
+            entities.append(
+                MySairSwitch(hass, api, mqtt_client, inst_ref, dev_id, name)
+            )
+            entities.append(
+                MySairFloorSwitch(
+                    hass, api, mqtt_client, inst_ref, dev_id, f"{zone_name} Suelo"
+                )
+            )
 
     async_add_entities(entities)
     _LOGGER.info(f"[MySair Switch] ✅ {len(entities)} switches creados.")
@@ -72,14 +78,16 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         try:
             # Encender = enviar comando 'mode' (no existe power "1"). Preservamos el
             # último modo calor/frío conocido; por defecto calor. Ver docs/protocol-findings.md.
-            _LOGGER.debug(f"[MySair Switch] 🔛 Encendiendo {self.name} (modo {self._last_ac_mode})")
+            _LOGGER.debug(
+                f"[MySair Switch] 🔛 Encendiendo {self.name} (modo {self._last_ac_mode})"
+            )
             response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,
                 self.device_id,
                 "mode",
                 self._last_ac_mode,
-                22.0
+                22.0,
             )
 
             def _revert(previous=previous_is_on):
@@ -96,10 +104,7 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         try:
             _LOGGER.debug(f"[MySair Switch] ⛔ Apagando {self.name}")
             response = await self.hass.async_add_executor_job(
-                self.api.send_zone_command,
-                self.inst_ref,
-                self.device_id,
-                "power"
+                self.api.send_zone_command, self.inst_ref, self.device_id, "power"
             )
 
             def _revert(previous=previous_is_on):
@@ -113,7 +118,9 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
 
     async def async_added_to_hass(self):
         self._unsub = async_dispatcher_connect(
-            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+            self.hass,
+            signal_zone_update(self.inst_ref, self.device_id),
+            self._handle_zone_update,
         )
         self._start_feedback_listener()
 
@@ -132,7 +139,9 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         # Recordar el modo AC (calor/frío) para preservarlo al reencender.
         if zone.get("is_ac") and zone.get("mode_raw") in ("0", "1"):
             self._last_ac_mode = zone.get("mode_raw")
-        _LOGGER.debug(f"[MySair Switch] 🔄 Estado {self.name}: {'ON' if self._is_on else 'OFF'}")
+        _LOGGER.debug(
+            f"[MySair Switch] 🔄 Estado {self.name}: {'ON' if self._is_on else 'OFF'}"
+        )
         self.async_write_ha_state()
 
 
@@ -196,8 +205,12 @@ class MySairFloorSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
     async def _async_set_floor(self, floor_on):
         previous_is_on = self._is_on
         try:
-            new_mode = compute_mode_value(self._current_is_heat, self._current_is_ac, floor_on)
-            _LOGGER.debug(f"[MySair Switch] 🌡️ Cambiando suelo a {'ON' if floor_on else 'OFF'} en {self.name} (m={new_mode})")
+            new_mode = compute_mode_value(
+                self._current_is_heat, self._current_is_ac, floor_on
+            )
+            _LOGGER.debug(
+                f"[MySair Switch] 🌡️ Cambiando suelo a {'ON' if floor_on else 'OFF'} en {self.name} (m={new_mode})"
+            )
             response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,
@@ -214,11 +227,15 @@ class MySairFloorSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
             self._is_on = floor_on
             self.async_write_ha_state()
         except Exception as e:
-            _LOGGER.error(f"[MySair Switch] ❌ Error al cambiar el suelo de {self.name}: {e}")
+            _LOGGER.error(
+                f"[MySair Switch] ❌ Error al cambiar el suelo de {self.name}: {e}"
+            )
 
     async def async_added_to_hass(self):
         self._unsub = async_dispatcher_connect(
-            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+            self.hass,
+            signal_zone_update(self.inst_ref, self.device_id),
+            self._handle_zone_update,
         )
         self._start_feedback_listener()
 
@@ -241,6 +258,7 @@ class MySairFloorSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
             self._current_is_ac = bool(zone.get("is_ac"))
         if zone.get("temp_target") is not None:
             self._current_temp_target = zone.get("temp_target")
-        _LOGGER.debug(f"[MySair Switch] 🔄 Suelo {self.name}: {'ON' if self._is_on else 'OFF'}")
+        _LOGGER.debug(
+            f"[MySair Switch] 🔄 Suelo {self.name}: {'ON' if self._is_on else 'OFF'}"
+        )
         self.async_write_ha_state()
-

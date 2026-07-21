@@ -80,9 +80,14 @@ class CommandFeedbackMixin:
     def _handle_feedback_event(self, event):
         if event.data.get("ctl") != self.inst_ref:
             return
-        if not self._pending_order_id or event.data.get("order_id") != self._pending_order_id:
+        if (
+            not self._pending_order_id
+            or event.data.get("order_id") != self._pending_order_id
+        ):
             return
-        _LOGGER.debug(f"[MySair] ✅ Comando confirmado para {self.name} (orderId={self._pending_order_id})")
+        _LOGGER.debug(
+            f"[MySair] ✅ Comando confirmado para {self.name} (orderId={self._pending_order_id})"
+        )
         self._pending_order_id = None
         self._pending_revert_fn = None
         if self._cancel_feedback_timeout:
@@ -99,7 +104,9 @@ class CommandFeedbackMixin:
                 reason = "con MQTT activo — puede ser un ACK perdido o un problema del backend"
 
             revert_fn = self._pending_revert_fn
-            revert_note = " — revirtiendo al último estado confirmado" if revert_fn else ""
+            revert_note = (
+                " — revirtiendo al último estado confirmado" if revert_fn else ""
+            )
             _LOGGER.warning(
                 f"[MySair] ⚠️ Sin confirmación MQTT para {self.name} tras "
                 f"{FEEDBACK_TIMEOUT_SECONDS}s ({reason}, orderId={self._pending_order_id})"

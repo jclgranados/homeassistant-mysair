@@ -14,7 +14,11 @@ from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mysair.const import DOMAIN, SERVICE_STOP_INSTALLATION
-from custom_components.mysair.api import MySairAPI, MySairAuthError, MySairConnectionError
+from custom_components.mysair.api import (
+    MySairAPI,
+    MySairAuthError,
+    MySairConnectionError,
+)
 from custom_components.mysair.mqtt_handler import MySairMQTTClient
 
 
@@ -35,9 +39,21 @@ def _mock_refresh_tokens_raises(exc):
 def _patch_happy_api(monkeypatch):
     monkeypatch.setattr(MySairAPI, "refresh_tokens", _mock_refresh_tokens_ok)
     monkeypatch.setattr(MySairAPI, "get_locations", lambda self: [{"id": 1001}])
-    monkeypatch.setattr(MySairAPI, "get_installations", lambda self, location_id: [{"reference": "INST_A"}])
-    monkeypatch.setattr(MySairAPI, "get_devices", lambda self, ref: [{"reference": "DEV_1", "name": "Salon"}])
-    monkeypatch.setattr(MySairAPI, "send_instruction", lambda self, instruction: {"msg": "Creado", "error": []})
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_installations",
+        lambda self, location_id: [{"reference": "INST_A"}],
+    )
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_devices",
+        lambda self, ref: [{"reference": "DEV_1", "name": "Salon"}],
+    )
+    monkeypatch.setattr(
+        MySairAPI,
+        "send_instruction",
+        lambda self, instruction: {"msg": "Creado", "error": []},
+    )
     monkeypatch.setattr(MySairMQTTClient, "start", lambda self: None)
 
 
@@ -67,7 +83,9 @@ async def test_setup_entry_success(hass, monkeypatch):
 async def test_setup_entry_migrates_legacy_password_out(hass, monkeypatch):
     # A6: entradas creadas antes del cambio guardaban password/access_token en claro.
     _patch_happy_api(monkeypatch)
-    entry = _make_entry(extra_data={"password": "plaintext-leftover", "access_token": "OLD_TOKEN"})
+    entry = _make_entry(
+        extra_data={"password": "plaintext-leftover", "access_token": "OLD_TOKEN"}
+    )
     entry.add_to_hass(hass)
 
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -89,7 +107,9 @@ async def test_setup_entry_missing_refresh_token_triggers_reauth(hass, monkeypat
 
 async def test_setup_entry_invalid_session_triggers_reauth(hass, monkeypatch):
     monkeypatch.setattr(
-        MySairAPI, "refresh_tokens", _mock_refresh_tokens_raises(MySairAuthError("expired"))
+        MySairAPI,
+        "refresh_tokens",
+        _mock_refresh_tokens_raises(MySairAuthError("expired")),
     )
     entry = _make_entry()
     entry.add_to_hass(hass)
@@ -102,7 +122,9 @@ async def test_setup_entry_invalid_session_triggers_reauth(hass, monkeypatch):
 
 async def test_setup_entry_connection_error_retries(hass, monkeypatch):
     monkeypatch.setattr(
-        MySairAPI, "refresh_tokens", _mock_refresh_tokens_raises(MySairConnectionError("boom"))
+        MySairAPI,
+        "refresh_tokens",
+        _mock_refresh_tokens_raises(MySairConnectionError("boom")),
     )
     entry = _make_entry()
     entry.add_to_hass(hass)
@@ -157,6 +179,7 @@ async def test_unload_entry_cleans_up(hass, monkeypatch):
 
 # --- SERVICIO mysair.stop_installation (F5) ---
 
+
 async def test_stop_installation_service_calls_api(hass, monkeypatch):
     _patch_happy_api(monkeypatch)
     calls = []
@@ -189,7 +212,10 @@ async def test_stop_installation_service_unknown_installation_raises(hass, monke
 
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(
-            DOMAIN, SERVICE_STOP_INSTALLATION, {"installation_ref": "NO_EXISTE"}, blocking=True
+            DOMAIN,
+            SERVICE_STOP_INSTALLATION,
+            {"installation_ref": "NO_EXISTE"},
+            blocking=True,
         )
 
 

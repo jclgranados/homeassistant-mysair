@@ -125,19 +125,23 @@ def parse_status_payload(payload):
     """
     if not isinstance(payload, dict):
         _LOGGER.warning(
-            "[MySair] status: payload no es un dict (%s), se rechaza el mensaje", type(payload).__name__
+            "[MySair] status: payload no es un dict (%s), se rechaza el mensaje",
+            type(payload).__name__,
         )
         return None
 
     ctl_ref = payload.get("ctl")
     if ctl_ref is None:
-        _LOGGER.warning("[MySair] status: payload sin 'ctl', el mensaje quedará sin destinatario")
+        _LOGGER.warning(
+            "[MySair] status: payload sin 'ctl', el mensaje quedará sin destinatario"
+        )
     parsed_value = parse_status_value(payload.get("value", ""))
 
     t_list = parsed_value.get("t", [])
     if not isinstance(t_list, list):
         _LOGGER.warning(
-            "[MySair] status: campo 't' con forma inesperada (%s), se ignora", type(t_list).__name__
+            "[MySair] status: campo 't' con forma inesperada (%s), se ignora",
+            type(t_list).__name__,
         )
         t_list = []
 
@@ -146,7 +150,9 @@ def parse_status_payload(payload):
         if not isinstance(t, dict):
             continue
         if t.get("rf") is None:
-            _LOGGER.warning("[MySair] status: zona sin 'rf' (zone_id), se generará sin identificador")
+            _LOGGER.warning(
+                "[MySair] status: zona sin 'rf' (zone_id), se generará sin identificador"
+            )
         power = _to_str(t.get("e", "0"))
         mode_raw, is_heat, is_cool, is_ac, is_floor = parse_mode(t.get("m"))
         zone_states.append(
@@ -159,10 +165,10 @@ def parse_status_payload(payload):
                 "temp_min": _to_float(t.get("tmm")),
                 "temp_max": _to_float(t.get("tmx")),
                 "humidity": _to_float(t.get("hum", t.get("hm"))),
-                "power": power,           # e crudo: "0"/"1"/"2"
-                "is_on": power != "0",    # standby ("2") también cuenta como encendido
+                "power": power,  # e crudo: "0"/"1"/"2"
+                "is_on": power != "0",  # standby ("2") también cuenta como encendido
                 "is_standby": power == "2",
-                "mode_raw": mode_raw,     # m crudo: "0".."5"
+                "mode_raw": mode_raw,  # m crudo: "0".."5"
                 "is_heat": is_heat,
                 "is_cool": is_cool,
                 "is_ac": is_ac,
@@ -200,7 +206,8 @@ def parse_feedback_payload(payload):
     """
     if not isinstance(payload, dict):
         _LOGGER.warning(
-            "[MySair] feedback: payload no es un dict (%s), se rechaza el mensaje", type(payload).__name__
+            "[MySair] feedback: payload no es un dict (%s), se rechaza el mensaje",
+            type(payload).__name__,
         )
         return None
 
@@ -215,6 +222,8 @@ def parse_feedback_payload(payload):
             ctl = nested.get("ctl", payload.get("ctl"))
 
     if order_id is None and ctl is None:
-        _LOGGER.warning("[MySair] feedback: no se encontró 'orderId' ni 'ctl' (ni plano ni anidado)")
+        _LOGGER.warning(
+            "[MySair] feedback: no se encontró 'orderId' ni 'ctl' (ni plano ni anidado)"
+        )
 
     return {"order_id": order_id, "ctl": ctl, "raw": payload}

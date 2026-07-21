@@ -11,6 +11,8 @@ pytest.importorskip("homeassistant")
 from homeassistant.loader import async_get_custom_components
 
 
-async def test_mysair_is_discovered_as_custom_component(hass, enable_custom_integrations):
+async def test_mysair_is_discovered_as_custom_component(
+    hass, enable_custom_integrations
+):
     components = await async_get_custom_components(hass)
     assert "mysair" in components

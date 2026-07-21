@@ -59,7 +59,9 @@ class MySairCoordinator:
 
     def start(self) -> None:
         """Se suscribe al evento `mysair_update` (una sola vez por entry)."""
-        self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_update)
+        self._unsub = self.hass.bus.async_listen(
+            f"{DOMAIN}_update", self._handle_update
+        )
 
     def stop(self) -> None:
         """Cancela la suscripción al bus."""
@@ -83,5 +85,7 @@ class MySairCoordinator:
             if zone_id is None:
                 continue
             self._zones[(ctl, zone_id)] = zone
-            _LOGGER.debug(f"[MySair Coordinator] 📨 Zona {ctl}/{zone_id} actualizada, redistribuyendo")
+            _LOGGER.debug(
+                f"[MySair Coordinator] 📨 Zona {ctl}/{zone_id} actualizada, redistribuyendo"
+            )
             async_dispatcher_send(self.hass, signal_zone_update(ctl, zone_id), zone)

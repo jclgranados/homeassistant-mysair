@@ -13,6 +13,7 @@ def _api(session):
 
 # --- LOGIN ---
 
+
 def test_login_success(fake_session, make_response, login_ok):
     fake_session.queue("post", make_response(200, login_ok))
     api = _api(fake_session)
@@ -50,24 +51,31 @@ def test_login_notifies_tokens_callback(fake_session, make_response, login_ok):
     fake_session.queue("post", make_response(200, login_ok))
     calls = []
     api = MySairAPI(
-        "user@example.com", "secret", session=fake_session,
+        "user@example.com",
+        "secret",
+        session=fake_session,
         on_tokens_refreshed=lambda access, refresh: calls.append((access, refresh)),
     )
     api.login()
     assert calls == [("TEST_ACCESS", "TEST_REFRESH")]
 
 
-def test_login_callback_error_does_not_break_login(fake_session, make_response, login_ok):
+def test_login_callback_error_does_not_break_login(
+    fake_session, make_response, login_ok
+):
     fake_session.queue("post", make_response(200, login_ok))
 
     def boom(access, refresh):
         raise RuntimeError("callback roto")
 
-    api = MySairAPI("user@example.com", "secret", session=fake_session, on_tokens_refreshed=boom)
+    api = MySairAPI(
+        "user@example.com", "secret", session=fake_session, on_tokens_refreshed=boom
+    )
     assert api.login() is True
 
 
 # --- REFRESH TOKENS ---
+
 
 def test_refresh_tokens_without_value_raises_auth_error(fake_session):
     api = _api(fake_session)
@@ -84,7 +92,9 @@ def test_refresh_tokens_invalid_raises_auth_error(fake_session, make_response):
         api.refresh_tokens()
 
 
-def test_refresh_tokens_backend_error_raises_connection_error(fake_session, make_response):
+def test_refresh_tokens_backend_error_raises_connection_error(
+    fake_session, make_response
+):
     fake_session.queue("put", make_response(500, {}, "boom"))
     api = _api(fake_session)
     api.refresh_token_value = "OLD_REFRESH"
@@ -93,10 +103,16 @@ def test_refresh_tokens_backend_error_raises_connection_error(fake_session, make
 
 
 def test_refresh_tokens_ok_notifies_callback(fake_session, make_response):
-    fake_session.queue("put", make_response(200, {"entity": {"access_token": "NEW", "refresh_token": "NEW_R"}}))
+    fake_session.queue(
+        "put",
+        make_response(
+            200, {"entity": {"access_token": "NEW", "refresh_token": "NEW_R"}}
+        ),
+    )
     calls = []
     api = MySairAPI(
-        "user@example.com", session=fake_session,
+        "user@example.com",
+        session=fake_session,
         on_tokens_refreshed=lambda access, refresh: calls.append((access, refresh)),
     )
     api.refresh_token_value = "OLD_REFRESH"
@@ -112,6 +128,7 @@ def test_api_works_without_password():
 
 
 # --- DESCUBRIMIENTO ---
+
 
 def test_get_locations_ok(fake_session, make_response):
     fake_session.queue("get", make_response(200, {"entity": [{"id": 1001}]}))
@@ -139,6 +156,7 @@ def test_get_devices_ok(fake_session, make_response):
 
 
 # --- SEND INSTRUCTION ---
+
 
 def _creado(make_response):
     return make_response(201, {"msg": "Creado", "error": []})
@@ -168,7 +186,9 @@ def test_send_instruction_401_refreshes_and_retries(
     fake_session.queue("post", make_response(401, {}), _creado(make_response))
     fake_session.queue(
         "put",
-        make_response(200, {"entity": {"access_token": "NEW", "refresh_token": "NEW_R"}}),
+        make_response(
+            200, {"entity": {"access_token": "NEW", "refresh_token": "NEW_R"}}
+        ),
         make_response(200, aws_credentials_ok),
     )
     api = _api(fake_session)
@@ -187,12 +207,15 @@ def test_send_instruction_401_refreshes_and_retries(
 def test_send_instruction_401_without_refresh_token_raises(fake_session, make_response):
     fake_session.queue("post", make_response(401, {}))
     api = _api(fake_session)
-    api.refresh_token_value = None  # refresh_tokens() lanza MySairAuthError → sin reintento
+    api.refresh_token_value = (
+        None  # refresh_tokens() lanza MySairAuthError → sin reintento
+    )
     with pytest.raises(Exception):
         api.send_instruction([{"command": "x"}])
 
 
 # --- SEND ZONE COMMAND ---
+
 
 def test_send_zone_command_mode(fake_session, make_response):
     fake_session.queue("post", _creado(make_response))
@@ -249,6 +272,7 @@ def test_send_zone_command_missing_params_raises(fake_session):
 
 # --- send_installation_command (F5, servicio stop_installation) ---
 
+
 def test_send_installation_command_stop(fake_session, make_response):
     fake_session.queue("post", _creado(make_response))
     _api(fake_session).send_installation_command("INST", "stop")
@@ -283,8 +307,13 @@ def test_send_installation_command_missing_ctl_raises(fake_session):
 
 # --- extract_order_id (E7, confirmación de comandos) ---
 
+
 def test_extract_order_id_ok():
-    response = {"msg": "Creado", "error": [], "entity": {"value": [{"orderId": "abc-123"}]}}
+    response = {
+        "msg": "Creado",
+        "error": [],
+        "entity": {"value": [{"orderId": "abc-123"}]},
+    }
     assert extract_order_id(response) == "abc-123"
 
 

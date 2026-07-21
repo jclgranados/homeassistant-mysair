@@ -29,10 +29,18 @@ async def async_setup_entry(hass, entry, async_add_entities):
         for dev in device_list:
             dev_id = dev.get("reference") or dev.get("rf") or dev.get("id")
             name = dev.get("name", f"Zona {dev_id}")
-            entities.append(MySairTempSensor(hass, inst_ref, dev_id, f"{name} Temperatura Actual"))
-            entities.append(MySairSetpointSensor(hass, inst_ref, dev_id, f"{name} Temperatura Consigna"))
+            entities.append(
+                MySairTempSensor(hass, inst_ref, dev_id, f"{name} Temperatura Actual")
+            )
+            entities.append(
+                MySairSetpointSensor(
+                    hass, inst_ref, dev_id, f"{name} Temperatura Consigna"
+                )
+            )
             entities.append(MySairModeSensor(hass, inst_ref, dev_id, f"{name} Modo"))
-            entities.append(MySairHumiditySensor(hass, inst_ref, dev_id, f"{name} Humedad"))
+            entities.append(
+                MySairHumiditySensor(hass, inst_ref, dev_id, f"{name} Humedad")
+            )
 
     async_add_entities(entities)
     _LOGGER.info(f"[MySair Sensor] ✅ {len(entities)} sensores creados.")
@@ -124,7 +132,9 @@ class MySairTempSensor(AvailabilityMixin, SensorEntity):
 
     async def async_added_to_hass(self):
         self._unsub = async_dispatcher_connect(
-            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+            self.hass,
+            signal_zone_update(self.inst_ref, self.device_id),
+            self._handle_zone_update,
         )
 
     async def async_will_remove_from_hass(self):
@@ -179,7 +189,9 @@ class MySairSetpointSensor(AvailabilityMixin, SensorEntity):
 
     async def async_added_to_hass(self):
         self._unsub = async_dispatcher_connect(
-            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+            self.hass,
+            signal_zone_update(self.inst_ref, self.device_id),
+            self._handle_zone_update,
         )
 
     async def async_will_remove_from_hass(self):
@@ -238,7 +250,9 @@ class MySairModeSensor(AvailabilityMixin, SensorEntity):
 
     async def async_added_to_hass(self):
         self._unsub = async_dispatcher_connect(
-            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+            self.hass,
+            signal_zone_update(self.inst_ref, self.device_id),
+            self._handle_zone_update,
         )
 
     async def async_will_remove_from_hass(self):
@@ -314,7 +328,9 @@ class MySairHumiditySensor(AvailabilityMixin, SensorEntity):
 
     async def async_added_to_hass(self):
         self._unsub = async_dispatcher_connect(
-            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+            self.hass,
+            signal_zone_update(self.inst_ref, self.device_id),
+            self._handle_zone_update,
         )
 
     async def async_will_remove_from_hass(self):
@@ -331,4 +347,3 @@ class MySairHumiditySensor(AvailabilityMixin, SensorEntity):
             self._state = new_val
             _LOGGER.debug(f"[MySair Sensor] 💧 {self._attr_name}: {new_val}%")
         self.async_write_ha_state()
-

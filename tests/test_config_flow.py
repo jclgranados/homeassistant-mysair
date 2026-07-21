@@ -9,7 +9,11 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mysair.const import DOMAIN
-from custom_components.mysair.api import MySairAPI, MySairAuthError, MySairConnectionError
+from custom_components.mysair.api import (
+    MySairAPI,
+    MySairAuthError,
+    MySairConnectionError,
+)
 
 
 def _mock_login_ok(refresh_token="REFRESH_NEW"):
@@ -43,11 +47,16 @@ async def test_user_flow_success_creates_entry(hass, monkeypatch):
     assert result2["type"] == FlowResultType.CREATE_ENTRY
     assert result2["title"] == "MySair"
     # A6: no se persiste password ni access_token, solo email + refresh_token.
-    assert result2["data"] == {"email": "user@example.com", "refresh_token": "REFRESH_NEW"}
+    assert result2["data"] == {
+        "email": "user@example.com",
+        "refresh_token": "REFRESH_NEW",
+    }
 
 
 async def test_user_flow_invalid_auth(hass, monkeypatch):
-    monkeypatch.setattr(MySairAPI, "login", _mock_login_raises(MySairAuthError("bad creds")))
+    monkeypatch.setattr(
+        MySairAPI, "login", _mock_login_raises(MySairAuthError("bad creds"))
+    )
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -60,7 +69,9 @@ async def test_user_flow_invalid_auth(hass, monkeypatch):
 
 
 async def test_user_flow_cannot_connect(hass, monkeypatch):
-    monkeypatch.setattr(MySairAPI, "login", _mock_login_raises(MySairConnectionError("boom")))
+    monkeypatch.setattr(
+        MySairAPI, "login", _mock_login_raises(MySairConnectionError("boom"))
+    )
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -101,7 +112,9 @@ async def test_reauth_flow_success_updates_refresh_token(hass, monkeypatch):
     )
     entry.add_to_hass(hass)
 
-    monkeypatch.setattr(MySairAPI, "login", _mock_login_ok(refresh_token="REFRESH_AFTER_REAUTH"))
+    monkeypatch.setattr(
+        MySairAPI, "login", _mock_login_ok(refresh_token="REFRESH_AFTER_REAUTH")
+    )
 
     result = await entry.start_reauth_flow(hass)
     assert result["type"] == FlowResultType.FORM
@@ -123,7 +136,9 @@ async def test_reauth_flow_invalid_auth_shows_error(hass, monkeypatch):
     )
     entry.add_to_hass(hass)
 
-    monkeypatch.setattr(MySairAPI, "login", _mock_login_raises(MySairAuthError("still bad")))
+    monkeypatch.setattr(
+        MySairAPI, "login", _mock_login_raises(MySairAuthError("still bad"))
+    )
 
     result = await entry.start_reauth_flow(hass)
     result2 = await hass.config_entries.flow.async_configure(

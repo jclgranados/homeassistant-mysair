@@ -107,6 +107,7 @@ def fake_session():
 
 # --- Payloads sanitizados (solo campos que el código realmente consume) ---
 
+
 @pytest.fixture
 def login_ok():
     return {"entity": {"access_token": "TEST_ACCESS", "refresh_token": "TEST_REFRESH"}}

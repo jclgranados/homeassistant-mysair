@@ -3,7 +3,12 @@ import logging
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+    ServiceValidationError,
+)
 
 from .api import MySairAPI, MySairAuthError, MySairConnectionError
 from .coordinator import MySairCoordinator
@@ -19,7 +24,9 @@ STOP_INSTALLATION_SCHEMA = vol.Schema({vol.Required(ATTR_INSTALLATION_REF): str}
 
 
 @callback
-def _persist_refresh_token(hass: HomeAssistant, entry: ConfigEntry, refresh_token) -> None:
+def _persist_refresh_token(
+    hass: HomeAssistant, entry: ConfigEntry, refresh_token
+) -> None:
     """Guarda el refresh_token si ha rotado (cada renovación invalida el anterior)."""
     if not refresh_token or refresh_token == entry.data.get("refresh_token"):
         return
@@ -33,13 +40,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     email = entry.data.get("email")
     refresh_token = entry.data.get("refresh_token")
     if not email or not refresh_token:
-        raise ConfigEntryAuthFailed("Faltan credenciales; reautentica la integración MySair.")
+        raise ConfigEntryAuthFailed(
+            "Faltan credenciales; reautentica la integración MySair."
+        )
 
     _LOGGER.info(f"[MySair] 🔐 Autenticando usuario {email}")
 
     def _on_tokens_refreshed(access_token, refresh_token_value):
         # Se invoca desde un hilo ejecutor: hay que volver al loop para tocar hass.
-        hass.loop.call_soon_threadsafe(_persist_refresh_token, hass, entry, refresh_token_value)
+        hass.loop.call_soon_threadsafe(
+            _persist_refresh_token, hass, entry, refresh_token_value
+        )
 
     api = MySairAPI(email, on_tokens_refreshed=_on_tokens_refreshed)
     api.refresh_token_value = refresh_token
@@ -49,7 +60,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     try:
         await hass.async_add_executor_job(api.refresh_tokens)
     except MySairAuthError as err:
-        raise ConfigEntryAuthFailed(f"Sesión MySair inválida o expirada: {err}") from err
+        raise ConfigEntryAuthFailed(
+            f"Sesión MySair inválida o expirada: {err}"
+        ) from err
     except MySairConnectionError as err:
         raise ConfigEntryNotReady(f"No se pudo conectar con MySair: {err}") from err
 
@@ -69,11 +82,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     first_loc = locations[0]
     location_id = first_loc["id"]
-    installations = await hass.async_add_executor_job(api.get_installations, location_id)
+    installations = await hass.async_add_executor_job(
+        api.get_installations, location_id
+    )
     if not installations:
-        raise ConfigEntryNotReady("No se encontraron instalaciones en la ubicación MySair.")
+        raise ConfigEntryNotReady(
+            "No se encontraron instalaciones en la ubicación MySair."
+        )
 
-    _LOGGER.info(f"[MySair] 🏠 Instalaciones detectadas: {[i['reference'] for i in installations]}")
+    _LOGGER.info(
+        f"[MySair] 🏠 Instalaciones detectadas: {[i['reference'] for i in installations]}"
+    )
 
     all_devices = {}
     installation_refs = []
@@ -82,7 +101,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         installation_refs.append(ref)
         devices = await hass.async_add_executor_job(api.get_devices, ref)
         all_devices[ref] = devices
-        _LOGGER.info(f"[MySair] 📟 Instalación {ref}: {len(devices)} termostatos encontrados")
+        _LOGGER.info(
+            f"[MySair] 📟 Instalación {ref}: {len(devices)} termostatos encontrados"
+        )
 
     # Guardar datos en memoria global
     hass.data.setdefault(DOMAIN, {})
@@ -109,7 +130,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                 # (parse_status_payload devuelve None) — no se dispara el
                 # evento en vez de propagar un valor vacío sin sentido.
                 if parsed_data is None:
-                    _LOGGER.warning(f"[MySair MQTT] ⛔ Payload de status rechazado (forma inesperada): {topic}")
+                    _LOGGER.warning(
+                        f"[MySair MQTT] ⛔ Payload de status rechazado (forma inesperada): {topic}"
+                    )
                     return
                 hass.loop.call_soon_threadsafe(
                     hass.bus.async_fire,
@@ -123,7 +146,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             elif topic.endswith("/feedback"):
                 feedback = parse_feedback_payload(payload)
                 if feedback is None:
-                    _LOGGER.warning(f"[MySair MQTT] ⛔ Payload de feedback rechazado (forma inesperada): {topic}")
+                    _LOGGER.warning(
+                        f"[MySair MQTT] ⛔ Payload de feedback rechazado (forma inesperada): {topic}"
+                    )
                     return
                 _LOGGER.debug(
                     f"[MySair MQTT] ✅ Confirmación recibida: orderId={feedback['order_id']} "
@@ -176,10 +201,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         while True:
             try:
                 for ref in installation_refs:
-                    await hass.async_add_executor_job(api.send_installation_command, ref, "status")
-                    _LOGGER.debug(f"[MySair] 🔁 Solicitud de estado enviada a instalación {ref}")
+                    await hass.async_add_executor_job(
+                        api.send_installation_command, ref, "status"
+                    )
+                    _LOGGER.debug(
+                        f"[MySair] 🔁 Solicitud de estado enviada a instalación {ref}"
+                    )
             except Exception as e:
-                _LOGGER.warning(f"[MySair] ⚠️ Error al enviar instrucción de estado: {e}")
+                _LOGGER.warning(
+                    f"[MySair] ⚠️ Error al enviar instrucción de estado: {e}"
+                )
             await asyncio.sleep(120)  # 2 minutos
 
     # Lanzar la tarea periódica ligada al ciclo de vida de la entrada:
@@ -192,13 +223,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # Compartido por todas las config entries del dominio: se registra una
     # sola vez y se retira cuando se descarga la última entrada.
     if not hass.services.has_service(DOMAIN, SERVICE_STOP_INSTALLATION):
+
         async def _async_handle_stop_installation(call: ServiceCall) -> None:
             installation_ref = call.data[ATTR_INSTALLATION_REF]
             for entry_data in hass.data.get(DOMAIN, {}).values():
                 if installation_ref in entry_data.get("installations", []):
                     try:
                         await hass.async_add_executor_job(
-                            entry_data["api"].send_installation_command, installation_ref, "stop"
+                            entry_data["api"].send_installation_command,
+                            installation_ref,
+                            "stop",
                         )
                     except Exception as e:
                         raise HomeAssistantError(
@@ -246,4 +280,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.services.async_remove(DOMAIN, SERVICE_STOP_INSTALLATION)
 
     return unload_ok
-

@@ -31,6 +31,7 @@ from api import MySairAPI
 
 # --- build_client_id (#20) ---
 
+
 def test_client_id_is_unique_per_call():
     a = build_client_id("AKIATEST")
     b = build_client_id("AKIATEST")
@@ -54,6 +55,7 @@ def test_client_id_is_not_the_mqtt_user():
 
 # --- build_status_topic (#5) ---
 
+
 def test_status_topic_with_base_topic():
     assert build_status_topic("pro/v1/", "INST_A") == "pro/v1/get/ctl/INST_A/#"
 
@@ -69,12 +71,17 @@ def test_status_topic_default_when_missing():
 
 # --- build_feedback_topic (#7, known-unknowns #23) ---
 
+
 def test_feedback_topic_with_base_topic():
-    assert build_feedback_topic("pro/v1/", "web0000") == "pro/v1/get/usr/web0000/feedback"
+    assert (
+        build_feedback_topic("pro/v1/", "web0000") == "pro/v1/get/usr/web0000/feedback"
+    )
 
 
 def test_feedback_topic_base_without_trailing_slash():
-    assert build_feedback_topic("pro/v2", "web0000") == "pro/v2/get/usr/web0000/feedback"
+    assert (
+        build_feedback_topic("pro/v2", "web0000") == "pro/v2/get/usr/web0000/feedback"
+    )
 
 
 def test_feedback_topic_default_when_missing():
@@ -82,6 +89,7 @@ def test_feedback_topic_default_when_missing():
 
 
 # --- aws_credentials_expired (#22) ---
+
 
 def _api_with_creds(**extra):
     api = MySairAPI("e", "p")
@@ -124,6 +132,7 @@ def test_expired_ignores_bad_expiry_value():
 
 # --- seconds_until_aws_credentials_expire (refresco proactivo de conexión) ---
 
+
 def test_seconds_until_expire_none_without_credentials():
     api = MySairAPI("e", "p")
     api.aws_credentials = None
@@ -162,6 +171,7 @@ def test_seconds_until_expire_ignores_bad_value():
 # "topic{json}" sin paréntesis, y antes se clasificaba como "unknown",
 # rompiendo la confirmación de comandos por completo.
 
+
 def _publish_message(topic_plus_json: bytes) -> bytes:
     # Fixed header + 2 bytes nulos (imitando cabecera/packet id variables,
     # cuyo contenido _on_message ignora) + "topic{json...}".
@@ -170,13 +180,17 @@ def _publish_message(topic_plus_json: bytes) -> bytes:
 
 def _client():
     received = []
-    client = MySairMQTTClient(api=None, installation_refs=[], message_callback=received.append)
+    client = MySairMQTTClient(
+        api=None, installation_refs=[], message_callback=received.append
+    )
     return client, received
 
 
 def test_on_message_extracts_topic_without_parens():
     client, received = _client()
-    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    msg = _publish_message(
+        b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}'
+    )
     client._on_message(None, msg)
 
     assert len(received) == 1
@@ -186,7 +200,9 @@ def test_on_message_extracts_topic_without_parens():
 
 def test_on_message_extracts_topic_with_parens():
     client, received = _client()
-    msg = _publish_message(b'(pro/v1/get/ctl/INST_A/status{"ctl":"INST_A","value":"{}"}')
+    msg = _publish_message(
+        b'(pro/v1/get/ctl/INST_A/status{"ctl":"INST_A","value":"{}"}'
+    )
     client._on_message(None, msg)
 
     assert len(received) == 1
@@ -212,7 +228,10 @@ def test_on_message_no_prefix_is_unknown():
 # Estos tests construyen frames PUBLISH sintéticos pero conformes al
 # estándar MQTT 3.1.1 para verificar el decodificador contra esa evidencia.
 
-def _build_publish_frame(topic: str, payload: bytes, qos: int = 0, packet_id: int = 1) -> bytes:
+
+def _build_publish_frame(
+    topic: str, payload: bytes, qos: int = 0, packet_id: int = 1
+) -> bytes:
     topic_bytes = topic.encode("utf-8")
     variable_header = struct.pack("!H", len(topic_bytes)) + topic_bytes
     if qos > 0:
@@ -303,7 +322,9 @@ def test_on_message_falls_back_when_strict_parse_inconclusive():
     # no son un frame MQTT válido, así que deben seguir resolviéndose por la
     # heurística de texto (comportamiento sin cambios para estos casos).
     client, received = _client()
-    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    msg = _publish_message(
+        b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}'
+    )
     client._on_message(None, msg)
 
     assert len(received) == 1
@@ -311,6 +332,7 @@ def test_on_message_falls_back_when_strict_parse_inconclusive():
 
 
 # --- Refresco proactivo de conexión (evita que AWS corte primero) ---
+
 
 class _FakeTimer:
     """Doble de threading.Timer: no arranca hilos reales ni espera de verdad."""
@@ -342,7 +364,9 @@ def _reset_fake_timers(monkeypatch):
 def _client_with_creds(**extra):
     api = MySairAPI("e", "p")
     api.aws_credentials = {"aws_mqtt_user": "web0000", **extra}
-    return MySairMQTTClient(api=api, installation_refs=[], message_callback=lambda data: None)
+    return MySairMQTTClient(
+        api=api, installation_refs=[], message_callback=lambda data: None
+    )
 
 
 def test_schedule_credential_refresh_timer_creates_timer():
@@ -399,6 +423,7 @@ def test_on_credential_refresh_due_marks_planned_reconnect_and_closes_ws():
 
 # --- compute_backoff_delay (E3) ---
 
+
 class _ZeroJitterRng:
     """Doble de `random`: sin aleatoriedad, para comprobar el valor exacto del backoff."""
 
@@ -421,8 +446,10 @@ def test_compute_backoff_delay_caps_at_max_delay():
 
 def test_compute_backoff_delay_applies_jitter_within_bounds():
     for attempt in range(5):
-        delay = compute_backoff_delay(attempt, base=10, max_delay=120, jitter_fraction=0.2)
-        expected = min(10 * (2 ** attempt), 120)
+        delay = compute_backoff_delay(
+            attempt, base=10, max_delay=120, jitter_fraction=0.2
+        )
+        expected = min(10 * (2**attempt), 120)
         assert expected * 0.8 <= delay <= expected * 1.2
 
 
@@ -448,6 +475,7 @@ def test_reconnect_attempt_property_mirrors_private_attribute():
 
 # --- Observabilidad: last_message_at, contadores de parseo, reconexiones (D3/D4) ---
 
+
 def test_last_message_at_set_on_strict_parse_success():
     client, _ = _client()
     assert client.last_message_at is None
@@ -464,7 +492,9 @@ def test_last_message_at_set_on_strict_parse_success():
 
 def test_last_message_at_set_on_fallback_parse_success():
     client, _ = _client()
-    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    msg = _publish_message(
+        b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}'
+    )
     client._on_message(None, msg)
 
     assert client.last_message_at is not None
@@ -511,6 +541,7 @@ def test_last_close_code_and_msg_set_on_close():
 
 # --- E2: frames parciales / múltiples paquetes por frame WS ---
 
+
 def _build_suback(packet_id=1, return_codes=b"\x00"):
     variable = struct.pack("!H", packet_id) + return_codes
     return b"\x90" + encode_varint(len(variable)) + variable
@@ -518,9 +549,15 @@ def _build_suback(packet_id=1, return_codes=b"\x00"):
 
 def test_next_packet_length_distinguishes_incomplete_from_malformed():
     assert _next_packet_length(b"") is FrameState.INCOMPLETE
-    assert _next_packet_length(b"\x30\x80") is FrameState.INCOMPLETE  # 1 byte de continuación, aún puede completarse
-    assert _next_packet_length(b"\x30\xff\xff\xff\xff") is FrameState.MALFORMED  # 4 bytes de continuación, nunca termina
-    assert _next_packet_length(b"\x30\x00") == 2  # remaining_length=0 -> paquete de 2 bytes
+    assert (
+        _next_packet_length(b"\x30\x80") is FrameState.INCOMPLETE
+    )  # 1 byte de continuación, aún puede completarse
+    assert (
+        _next_packet_length(b"\x30\xff\xff\xff\xff") is FrameState.MALFORMED
+    )  # 4 bytes de continuación, nunca termina
+    assert (
+        _next_packet_length(b"\x30\x00") == 2
+    )  # remaining_length=0 -> paquete de 2 bytes
 
 
 def test_on_message_dispatches_two_coalesced_publishes_in_one_call():
@@ -549,12 +586,17 @@ def test_on_message_dispatches_connack_and_suback_coalesced():
     assert client._recv_buffer == b""
 
 
-@pytest.mark.parametrize("split_at_fn", [
-    lambda topic, payload: 1,  # tras la cabecera fija, antes del varint
-    lambda topic, payload: 3,  # a mitad del prefijo de longitud de topic (2 bytes)
-    lambda topic, payload: 4 + len(topic) // 2,  # a mitad del topic
-    lambda topic, payload: 4 + len(topic) + len(payload) // 2,  # a mitad del payload
-])
+@pytest.mark.parametrize(
+    "split_at_fn",
+    [
+        lambda topic, payload: 1,  # tras la cabecera fija, antes del varint
+        lambda topic, payload: 3,  # a mitad del prefijo de longitud de topic (2 bytes)
+        lambda topic, payload: 4 + len(topic) // 2,  # a mitad del topic
+        lambda topic, payload: (
+            4 + len(topic) + len(payload) // 2
+        ),  # a mitad del payload
+    ],
+)
 def test_on_message_reassembles_publish_split_across_two_calls(split_at_fn):
     client, received = _client()
     topic = "pro/v1/get/ctl/INST_A/status"
@@ -577,7 +619,9 @@ def test_on_message_legacy_fallback_unchanged_for_existing_fixtures():
     # legacy (ver más arriba) siguen produciendo el mismo resultado bajo el
     # nuevo bucle de reensamblado (E2) que antes de introducirlo.
     client, received = _client()
-    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    msg = _publish_message(
+        b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}'
+    )
     client._on_message(None, msg)
 
     assert len(received) == 1
@@ -595,7 +639,9 @@ def test_on_message_split_legacy_fallback_message_across_two_calls():
     # reensamblan en cualquier punto de corte (ver test parametrizado de
     # arriba).
     client, received = _client()
-    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    msg = _publish_message(
+        b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}'
+    )
 
     client._on_message(None, msg[:1])
     assert received == []
@@ -608,7 +654,9 @@ def test_on_message_split_legacy_fallback_message_across_two_calls():
 def test_recv_buffer_resets_when_declared_length_exceeds_cap():
     client, received = _client()
     huge_len = MAX_RECV_BUFFER_SIZE + 1
-    header = b"\x30" + encode_varint(huge_len)  # muy lejos de completarse, pero ya excede el cap
+    header = b"\x30" + encode_varint(
+        huge_len
+    )  # muy lejos de completarse, pero ya excede el cap
 
     client._on_message(None, header)
 

@@ -98,11 +98,19 @@ class MySairAPI:
             raise MySairConnectionError(f"Error de red en login: {e}") from e
 
         if resp.status_code in (401, 403):
-            _LOGGER.error(f"[MySairAPI] ❌ Login failed: credenciales inválidas ({resp.status_code})")
-            raise MySairAuthError(f"Login error: {resp.status_code} {_truncate(resp.text)}")
+            _LOGGER.error(
+                f"[MySairAPI] ❌ Login failed: credenciales inválidas ({resp.status_code})"
+            )
+            raise MySairAuthError(
+                f"Login error: {resp.status_code} {_truncate(resp.text)}"
+            )
         if resp.status_code != 200:
-            _LOGGER.error(f"[MySairAPI] ❌ Login failed: {resp.status_code} {_truncate(resp.text)}")
-            raise MySairConnectionError(f"Login error: {resp.status_code} {_truncate(resp.text)}")
+            _LOGGER.error(
+                f"[MySairAPI] ❌ Login failed: {resp.status_code} {_truncate(resp.text)}"
+            )
+            raise MySairConnectionError(
+                f"Login error: {resp.status_code} {_truncate(resp.text)}"
+            )
 
         data = resp.json()
         self.entity = data.get("entity", {})
@@ -143,11 +151,19 @@ class MySairAPI:
             raise MySairConnectionError(f"Error de red al refrescar tokens: {e}") from e
 
         if resp.status_code in (401, 403):
-            _LOGGER.error(f"[MySairAPI] ❌ Refresh token inválido o expirado: {resp.status_code}")
-            raise MySairAuthError(f"Refresh tokens error: {resp.status_code} {_truncate(resp.text)}")
+            _LOGGER.error(
+                f"[MySairAPI] ❌ Refresh token inválido o expirado: {resp.status_code}"
+            )
+            raise MySairAuthError(
+                f"Refresh tokens error: {resp.status_code} {_truncate(resp.text)}"
+            )
         if resp.status_code != 200:
-            _LOGGER.error(f"[MySairAPI] ❌ Error al refrescar tokens: {resp.status_code} {_truncate(resp.text)}")
-            raise MySairConnectionError(f"Refresh tokens error: {resp.status_code} {_truncate(resp.text)}")
+            _LOGGER.error(
+                f"[MySairAPI] ❌ Error al refrescar tokens: {resp.status_code} {_truncate(resp.text)}"
+            )
+            raise MySairConnectionError(
+                f"Refresh tokens error: {resp.status_code} {_truncate(resp.text)}"
+            )
 
         data = resp.json()
         entity = data.get("entity", {})
@@ -169,10 +185,16 @@ class MySairAPI:
         try:
             _LOGGER.debug("[MySairAPI] ☁️ Solicitando credenciales AWS MQTT...")
             headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = self.session.put(f"{self.base_url}/user/refreshawscredentials", headers=headers, timeout=15)
+            resp = self.session.put(
+                f"{self.base_url}/user/refreshawscredentials",
+                headers=headers,
+                timeout=15,
+            )
 
             if resp.status_code != 200:
-                raise Exception(f"AWS credentials error: {resp.status_code} {_truncate(resp.text)}")
+                raise Exception(
+                    f"AWS credentials error: {resp.status_code} {_truncate(resp.text)}"
+                )
 
             data = resp.json()
             entity = data.get("entity", {})
@@ -204,7 +226,9 @@ class MySairAPI:
                 "aws_expires_at": entity.get("aws_expires_at"),
             }
 
-            _LOGGER.debug(f"[MySairAPI] ✅ Credenciales AWS obtenidas para usuario {entity['aws_mqtt_user']}")
+            _LOGGER.debug(
+                f"[MySairAPI] ✅ Credenciales AWS obtenidas para usuario {entity['aws_mqtt_user']}"
+            )
             return self.aws_credentials
 
         except Exception as e:
@@ -258,10 +282,14 @@ class MySairAPI:
         try:
             _LOGGER.info("[MySairAPI] 📍 Locations...")
             headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = self.session.get(f"{self.base_url}/locations", headers=headers, timeout=10)
+            resp = self.session.get(
+                f"{self.base_url}/locations", headers=headers, timeout=10
+            )
 
             if resp.status_code != 200:
-                raise Exception(f"Locations error: {resp.status_code} {_truncate(resp.text)}")
+                raise Exception(
+                    f"Locations error: {resp.status_code} {_truncate(resp.text)}"
+                )
 
             return resp.json().get("entity", [])
         except Exception as e:
@@ -279,7 +307,9 @@ class MySairAPI:
                 timeout=10,
             )
             if resp.status_code != 200:
-                raise Exception(f"Installations error: {resp.status_code} {_truncate(resp.text)}")
+                raise Exception(
+                    f"Installations error: {resp.status_code} {_truncate(resp.text)}"
+                )
             return resp.json().get("entity", [])
         except Exception as e:
             _LOGGER.error(f"[MySairAPI] ❌ Error obteniendo instalaciones: {e}")
@@ -296,7 +326,9 @@ class MySairAPI:
                 timeout=10,
             )
             if resp.status_code != 200:
-                raise Exception(f"Devices error: {resp.status_code} {_truncate(resp.text)}")
+                raise Exception(
+                    f"Devices error: {resp.status_code} {_truncate(resp.text)}"
+                )
             return resp.json().get("entity", [])
         except Exception as e:
             _LOGGER.error(f"[MySairAPI] ❌ Error obteniendo devices: {e}")
@@ -314,7 +346,10 @@ class MySairAPI:
             headers = {"Authorization": f"Bearer {self.access_token}"}
 
             resp = self.session.post(
-                f"{self.base_url}/send/instruction", headers=headers, json=instruction, timeout=10
+                f"{self.base_url}/send/instruction",
+                headers=headers,
+                json=instruction,
+                timeout=10,
             )
 
             # --- Si el token expiró, refrescamos y reintentamos una vez ---
@@ -323,16 +358,23 @@ class MySairAPI:
             if resp.status_code == 401:
                 _LOGGER.debug("[MySairAPI] ⚠️ Token HTTP expirado, renovando sesión...")
                 self.refresh_tokens()
-                _LOGGER.debug("[MySairAPI] 🔄 Token HTTP renovado, actualizando credenciales AWS...")
+                _LOGGER.debug(
+                    "[MySairAPI] 🔄 Token HTTP renovado, actualizando credenciales AWS..."
+                )
                 self.refresh_aws_credentials()
                 headers = {"Authorization": f"Bearer {self.access_token}"}
                 resp = self.session.post(
-                    f"{self.base_url}/send/instruction", headers=headers, json=instruction, timeout=10
+                    f"{self.base_url}/send/instruction",
+                    headers=headers,
+                    json=instruction,
+                    timeout=10,
                 )
 
             # --- Validación final ---
             if resp.status_code != 201:
-                raise Exception(f"Instruction error: {resp.status_code} {_truncate(resp.text)}")
+                raise Exception(
+                    f"Instruction error: {resp.status_code} {_truncate(resp.text)}"
+                )
 
             data = resp.json()
             msg = data.get("msg", "")
@@ -347,11 +389,12 @@ class MySairAPI:
             _LOGGER.error(f"[MySairAPI] ❌ Error al enviar instrucción: {e}")
             raise
 
-
     # ==========================================================
     # ⚙️ ZONE COMMAND HELPERS (para Climate, Switch, etc.)
     # ==========================================================
-    def send_zone_command(self, ctl, device, command_type, value=None, temperature=None):
+    def send_zone_command(
+        self, ctl, device, command_type, value=None, temperature=None
+    ):
         """
         Envía una instrucción formateada correctamente para controlar un termostato.
 
@@ -373,7 +416,9 @@ class MySairAPI:
 
             if command_type == "mode":
                 if value not in ["0", "1"]:
-                    raise ValueError("Modo inválido: usa '0' para calor o '1' para frío.")
+                    raise ValueError(
+                        "Modo inválido: usa '0' para calor o '1' para frío."
+                    )
                 payload_value = {"mode": value, "temperature": str(temperature or 22.0)}
 
             elif command_type == "temp":
@@ -390,20 +435,26 @@ class MySairAPI:
             else:
                 raise ValueError(f"Tipo de comando no soportado: {command_type}")
 
-            instruction = [{
-                "sender": "WEB",
-                "ctl": ctl,
-                "app": app_name,
-                "device": device,
-                "command": command_type,
-                "value": payload_value
-            }]
+            instruction = [
+                {
+                    "sender": "WEB",
+                    "ctl": ctl,
+                    "app": app_name,
+                    "device": device,
+                    "command": command_type,
+                    "value": payload_value,
+                }
+            ]
 
-            _LOGGER.debug(f"[MySairAPI] ⚙️ Enviando comando '{command_type}' a {device} ({ctl}) → {instruction}")
+            _LOGGER.debug(
+                f"[MySairAPI] ⚙️ Enviando comando '{command_type}' a {device} ({ctl}) → {instruction}"
+            )
             return self.send_instruction(instruction)
 
         except Exception as e:
-            _LOGGER.error(f"[MySairAPI] ❌ Error al enviar comando {command_type} para {device}: {e}")
+            _LOGGER.error(
+                f"[MySairAPI] ❌ Error al enviar comando {command_type} para {device}: {e}"
+            )
             raise
 
     def send_installation_command(self, ctl, command_type, value=None):
@@ -428,22 +479,30 @@ class MySairAPI:
             elif command_type == "status":
                 payload_value = "sync"
             else:
-                raise ValueError(f"Tipo de comando de instalación no soportado: {command_type}")
+                raise ValueError(
+                    f"Tipo de comando de instalación no soportado: {command_type}"
+                )
 
-            instruction = [{
-                "sender": "WEB",
-                "ctl": ctl,
-                "app": app_name,
-                "device": "",
-                "command": command_type,
-                "value": payload_value,
-            }]
+            instruction = [
+                {
+                    "sender": "WEB",
+                    "ctl": ctl,
+                    "app": app_name,
+                    "device": "",
+                    "command": command_type,
+                    "value": payload_value,
+                }
+            ]
 
-            _LOGGER.debug(f"[MySairAPI] 🏠 Enviando comando de instalación '{command_type}' a {ctl} → {instruction}")
+            _LOGGER.debug(
+                f"[MySairAPI] 🏠 Enviando comando de instalación '{command_type}' a {ctl} → {instruction}"
+            )
             return self.send_instruction(instruction)
 
         except Exception as e:
-            _LOGGER.error(f"[MySairAPI] ❌ Error al enviar comando de instalación {command_type} para {ctl}: {e}")
+            _LOGGER.error(
+                f"[MySairAPI] ❌ Error al enviar comando de instalación {command_type} para {ctl}: {e}"
+            )
             raise
 
     # ==========================================================
@@ -482,12 +541,15 @@ class MySairAPI:
         k_region = sign(k_date, region)
         k_service = sign(k_region, service)
         k_signing = sign(k_service, "aws4_request")
-        signature = hmac.new(k_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+        signature = hmac.new(
+            k_signing, string_to_sign.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
         canonical_querystring += f"&X-Amz-Signature={signature}"
-        canonical_querystring += "&" + urllib.parse.urlencode({"X-Amz-Security-Token": token})
+        canonical_querystring += "&" + urllib.parse.urlencode(
+            {"X-Amz-Security-Token": token}
+        )
 
         url = f"wss://{host}/mqtt?{canonical_querystring}"
         _LOGGER.info(f"[MySairAPI] 🔗 URL MQTT firmada generada para {host}")
         return url
-
