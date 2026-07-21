@@ -201,6 +201,11 @@ Solo existen `main` y `develop` en `origin`; no dejar ramas de feature huérfana
 1. Crear una rama de feature corta **desde `develop`** (nombre descriptivo, p. ej. `mqtt-robustness`).
 2. Commits + PR **contra `develop`**; borrar la rama al fusionar (`gh pr merge --delete-branch` o equivalente).
 3. `develop` se fusiona contra `main` **cuando el usuario lo pida o lo considere necesario** (release), no automáticamente en cada PR.
+4. **Tras fusionar a `main`**, crear siempre una release de GitHub con tag `v<version>` (la misma `version` de `manifest.json` en ese momento), por ejemplo:
+   ```bash
+   gh release create v2.10.1 --target main --title "v2.10.1" --notes "<sección correspondiente de CHANGELOG.md>"
+   ```
+   **Motivo:** HACS solo muestra un número de versión con sentido si sigue una release de GitHub con tag; sin ninguna release, cae de vuelta a mostrar el hash del commit que está trackeando en `main` (p. ej. `16ed989`), que no significa nada para el usuario. Usar como notas de la release el bloque correspondiente de `CHANGELOG.md` (la sección de esa versión, ya escrita en español).
 
 ---
 
