@@ -26,7 +26,7 @@
 | B1 | Refactor de testabilidad: extraer `parse_status_payload`, inyectar `requests.Session`. | ✅ Hecho |
 | B2 | Añadir `pytest` + `pytest-homeassistant-custom-component` + fixtures sanitizadas (`docs/testing-strategy.md`). | ✅ Hecho |
 | B3 | Tests P0/P1 (funciones puras, HTTP, config flow). | ✅ Hecho |
-| B4 | Tests P2/P3 (MQTT, entidades, unload/reload) tras Fase A. | 🟡 P2 hecho (config flow, setup/unload, entidades). P3: reload, varias instalaciones y cambio de topología cubiertos (Tarea 30, sin necesitar captura real); frames parciales/multi-paquete cubiertos por E2 (Tarea 26) con bytes sintéticos. Quedan sin tests: mensajes duplicados/fuera de orden, y confirmar con tráfico real E1/E2/frames — todos necesitan una captura de producción. |
+| B4 | Tests P2/P3 (MQTT, entidades, unload/reload) tras Fase A. | 🟡 P2 hecho (config flow, setup/unload, entidades). P3: reload, varias instalaciones, cambio de topología (con limpieza automática, Tarea 31) cubiertos (Tarea 30, sin necesitar captura real); frames parciales/multi-paquete cubiertos por E2 (Tarea 26) con bytes sintéticos. Quedan sin tests: mensajes duplicados/fuera de orden, y confirmar con tráfico real E1/E2/frames — todos necesitan una captura de producción. |
 | B5 | CI GitHub Actions: `hassfest`, `pytest` (P0/P1 + P2 vía Docker), `ruff`. | ✅ Hecho (2026-07-21) — 4º job `ruff` añadido tras comprobar en local que las reglas por defecto solo daban 8 hallazgos triviales (ver Tarea 30); reglas más estrictas quedan como posible ampliación futura. |
 
 ---
@@ -91,7 +91,7 @@
 | G1 | `hacs.json` + estructura `custom_components/mysair/` para instalación vía HACS. | ✅ Hecho |
 | G2 | README completo: instalación, configuración, limitaciones, aviso de "no oficial". | ✅ Hecho |
 | G3 | Versionado semántico y CHANGELOG. | ✅ Hecho |
-| G4 | Ajustar/retirar `quality_scale` hasta cumplir requisitos. | ✅ Hecho (2026-07-21) — icono de marca añadido vía `custom_components/mysair/brand/` (mecanismo local de HA ≥2026.3.0, sin necesidad de PR a `home-assistant/brands`; ver anuncio oficial "Custom integrations can now ship their own brand images"). `quality_scale: silver` declarado en el manifiesto y **confirmado en CI**: `hassfest` lo acepta (PR #34, los tres jobs en verde). |
+| G4 | Ajustar/retirar `quality_scale` hasta cumplir requisitos. | ✅ Hecho (2026-07-21) — icono de marca añadido vía `custom_components/mysair/brand/` (mecanismo local de HA ≥2026.3.0, sin necesidad de PR a `home-assistant/brands`; ver anuncio oficial "Custom integrations can now ship their own brand images"). `quality_scale: silver` declarado en el manifiesto y **confirmado en CI**: `hassfest` lo acepta (PR #34, los tres jobs en verde). **Decisión (confirmada con el usuario):** no se hace el PR legacy a `home-assistant/brands` para cubrir HA <2026.3.0 — se acepta ese hueco, los usuarios irán actualizando de versión. |
 | G5 | Ampliar `.gitignore` (`.env`, `*.har`, capturas). | ✅ Hecho |
 
 ---
