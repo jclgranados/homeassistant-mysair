@@ -110,7 +110,7 @@ El callback (`__init__.py:74-122`) espera un JSON con:
 | `hm` | humedad | num | Confirmado |
 | `vv` | modo/velocidad de ventilador actual | str | Confirmado |
 | `tzv` | valor de temporizador actual | str | Confirmado |
-| `sv` | estado de suelo actual | str | Confirmado |
+| `sv` | suelo radiante encendido/apagado | `"0"`/`"1"` | ✅ Confirmado (`setFloor`, re-verificado 2026-07-21) |
 | `c` / `f` | capacidad: permite calor / frío | `"1"`/`"0"` | Confirmado |
 | `v` / `s` | capacidad: permite ventilador / suelo | `"1"`/`"0"` | Confirmado |
 | `tz` / `hp` | capacidad: permite temporizador / programas | `"1"`/`"0"` | Confirmado |

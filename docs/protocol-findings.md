@@ -113,10 +113,21 @@ devices: t.t.map(e=>({
 | `hm` | humedad | num |
 | `vv` | modo/velocidad de ventilador actual | str |
 | `tzv` | valor de temporizador actual | str |
-| `sv` | estado de suelo actual | str |
+| `sv` | **suelo radiante encendido/apagado**: "0"/"1" (distinto de la capacidad `s`) | str |
 | `pl` | principal | flag |
 | Capacidades | `c`=permite calor, `f`=permite frío, `v`=fan, `s`=suelo, `tz`=timer, `hp`=programas | "1"/"0" |
 | `v` (instalación) | versión | — |
+
+**Confirmación de `sv`** (2026-07-21, re-fetch de `app.09acea34.js`, mismo hash que el análisis original): la fila
+original de esta tabla no citaba un getter concreto, y una revisión posterior (Tarea 22) no lo encontró y lo dejó
+como incógnita. Al repetir la búsqueda se localizó:
+```js
+setFloor(e){this.sv=e?"1":"0"}
+// ...
+toggleRadiatingFloor:function(e){this.status.setFloor(e),this.setModeHeat(this.status.isModeAC(),e)}
+```
+`setFloor` actúa sobre `this.status` (el mismo objeto en vivo donde residen `e`/`m`/`tc`), confirmando que `sv` es
+parte del estado de zona real, no solo de configuración estática. Ver `docs/known-unknowns.md` #26.
 
 ## 6. Suscripción MQTT
 
