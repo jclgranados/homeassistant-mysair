@@ -148,7 +148,8 @@ classDiagram
 | `e` (status) | encendido: 0=off, 1=on, 2=standby | ✅ Confirmado (app oficial) |
 | `m` (status) | modo 0-5: par=calor, impar=frío; {0,1,4,5}=AC, {2,3,4,5}=suelo | ✅ Confirmado |
 | `tr`/`tc`/`tmm`/`tmx`/`hm` | temp actual/consigna/min/max/humedad | ✅ Confirmado |
-| `vv`/`tzv`/`sv` | fan / temporizador / suelo (valores actuales) | ✅ Confirmado |
+| `vv`/`tzv` | fan / temporizador (valores actuales) | ✅ Confirmado |
+| `sv` | suelo radiante encendido/apagado ("0"/"1") | ✅ Confirmado (re-verificado 2026-07-21, ver `known-unknowns.md` #26) |
 | `c`/`f`/`v`/`s`/`tz`/`hp`/`pl` | capacidades (calor/frío/fan/suelo/timer/programas/principal) | ✅ Confirmado |
 | `value` string con `;` final | JSON serializado con terminador (`slice(0,-1)` en la app) | ✅ Confirmado |
 | `app` (`web0077`/`aws_mqtt_user`) | `session.getClientId()` del emisor | ✅ Confirmado |

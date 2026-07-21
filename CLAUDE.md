@@ -245,7 +245,7 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 
 Pendientes:
 - 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente; los duplicados de `feedback` vistos en producción encajan aquí).
-- 🟡 **Campos de zona sin mapear** (`vf`, `hmh`, `mh`, `p`, `ps`, `sv`): búsqueda exhaustiva en el bundle JS sin encontrar referencias — quedan sin interpretar por la regla de no inventar campos (ver `docs/known-unknowns.md`).
+- 🟡 **Campos de zona sin interpretar** (`vf`, `hmh`, `mh`, `p`, `ps`): búsqueda exhaustiva en el bundle JS sin encontrar referencias — quedan sin interpretar por la regla de no inventar campos (ver `docs/known-unknowns.md`). (`sv` se resolvió el 2026-07-21: es el estado de suelo radiante encendido/apagado, `setFloor` en el bundle — un intento de búsqueda anterior no lo había encontrado, no es que el campo no exista.)
 - 🟡 **`quality_scale: silver`** sigue retirado del manifiesto: aunque C4 cubre las traducciones, falta el icono de marca en `home-assistant/brands` (PR a un repo externo) para que reclamarlo esté justificado por el propio criterio del proyecto (ver `docs/execution-plan.md` Tarea 11/23).
 
 Decisiones de alcance (no son bugs):
