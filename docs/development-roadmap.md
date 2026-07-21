@@ -26,7 +26,7 @@
 | B1 | Refactor de testabilidad: extraer `parse_status_payload`, inyectar `requests.Session`. | ✅ Hecho |
 | B2 | Añadir `pytest` + `pytest-homeassistant-custom-component` + fixtures sanitizadas (`docs/testing-strategy.md`). | ✅ Hecho |
 | B3 | Tests P0/P1 (funciones puras, HTTP, config flow). | ✅ Hecho |
-| B4 | Tests P2/P3 (MQTT, entidades, unload/reload) tras Fase A. | 🟠 P2 hecho (config flow, setup/unload, entidades); P3 (robustez MQTT: reconexión, duplicados, frames partidos) pendiente. |
+| B4 | Tests P2/P3 (MQTT, entidades, unload/reload) tras Fase A. | 🟠 P2 hecho (config flow, setup/unload, entidades). P3 parcial: frames parciales/multi-paquete ya cubiertos por E2 (Tarea 26), pero con bytes sintéticos, no una captura real; reconexión y mensajes duplicados/fuera de orden siguen sin tests. |
 | B5 | CI GitHub Actions: `hassfest`, `pytest` (P0/P1 + P2 vía Docker). | ✅ Hecho (`ruff` queda fuera: no configurado en el repo todavía) |
 
 ---
@@ -100,4 +100,10 @@
 
 ~~A1 → A2 → A4 → A3 (estabilizar y limpiar) → A5/A6/A7 (requiere validación de protocolo) → B1–B3 (red de seguridad de tests)~~ — Fases A y B completas. `docs/known-unknowns.md` #6 (formato de frame MQTT, bloqueaba E1/E2) ya está resuelto — ninguna fila de esa tabla sigue marcada con riesgo 🔴 a día de hoy.
 
-**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), G, E (E1-E6) y F (F1-F6) completas. E6 y F6 resueltas como decisiones documentadas (no migrar / no desarrollar), F3 como decisión de "sin soporte de protocolo" con limpieza de código muerto. No queda ninguna tarea numerada abierta en el roadmap; el resto de trabajo futuro vive en `docs/execution-plan.md` §Pendiente (ítems no numerados: C1-adjacent como refresco de logs sensibles ya cubierto en D2, mejoras de test P3, etc.).
+**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), G, E (E1-E6) y F (F1-F6) completas. E6 y F6 resueltas como decisiones documentadas (no migrar / no desarrollar), F3 como decisión de "sin soporte de protocolo" con limpieza de código muerto. No queda ninguna tarea numerada abierta en el roadmap.
+
+El trabajo pendiente que no encaja en una fase numerada vive en `docs/execution-plan.md` §Pendiente:
+traducción de nombres de entidad, icono de marca para `quality_scale: silver`, tests P3 de robustez MQTT
+contra tráfico real (B4, parcialmente cubierto por E2 con bytes sintéticos), campos de zona sin
+interpretar (`vf`/`hmh`/`mh`/`p`/`ps`), y confirmar en producción que el parser estricto de E1 funciona
+con tráfico real (hoy solo probado con bytes sintéticos).

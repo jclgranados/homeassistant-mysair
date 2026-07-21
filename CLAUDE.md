@@ -60,7 +60,7 @@ pytest                      # 126 tests: parser, builders MQTT, firma SigV4, cli
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 180+ tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona)
+docker compose run --rm test-ha    # 226+ tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona + sensor de conexión MQTT + reensamblado de frames + validación de payloads + control de suelo radiante)
 
 # Lint / formato (recomendado: ruff; aún no configurado en el repo)
 ruff check custom_components/mysair tests
@@ -261,6 +261,7 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **E6 (evaluar paho-mqtt):** decisión documentada de **no migrar** — no soporta de forma nativa una URL WSS firmada con SigV4 que hay que re-firmar antes de cada reconexión; el ahorro real de código no compensa el riesgo de re-validar en producción el comportamiento de reconexión ya depurado (Tareas 8/20). Ver Tarea 26 y `docs/development-roadmap.md`.
 - ✅ **F3 (modo auto):** confirmado que el protocolo no tiene ningún modo de cambio automático calor/frío (`m` 0-5 cubre exactamente las 6 combinaciones AC/suelo × calor/frío, sin hueco extra). `const.HVAC_MODES` (con `"auto"`) no tenía consumidores; eliminado. Ver Tarea 27.
 - ✅ **F4 (control de suelo radiante, repurpose):** el `select.py` original (eliminado en A3) era un toggle roto de calor/frío ya duplicado por `climate.hvac_mode`. En su lugar, nueva entidad `MySairFloorSwitch` (`switch.py`) que controla el suelo radiante reutilizando el comando `mode` existente (recalcula `m` con `compute_mode_value`, sin comando nuevo) — hueco genuino que no cubría ninguna entidad hasta ahora. Ver Tarea 27.
+- ✅ **Atributo `medio` (AC/suelo/mixto):** `sensor.<zona>_modo` (`MySairModeSensor`) gana un atributo `medio` que resume en un solo valor si la zona usa AC, suelo o ambos, sin tener que cruzar `climate.<zona>` con `switch.<zona>_suelo` manualmente. Se conserva aunque la zona esté apagada (`m` no depende de `e`). Ver Tarea 28.
 
 Pendientes:
 - 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente; los duplicados de `feedback` vistos en producción encajan aquí).
