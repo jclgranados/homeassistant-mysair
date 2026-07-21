@@ -202,7 +202,8 @@ class MySairSetpointSensor(AvailabilityMixin, SensorEntity):
 # 🔄 SENSOR DE MODO HVAC
 # ==========================================================
 class MySairModeSensor(AvailabilityMixin, SensorEntity):
-    """Muestra el modo actual (OFF / HEAT / COOL)."""
+    """Muestra el modo actual (OFF / HEAT / COOL) y, como atributo, el medio
+    activo (AC / suelo radiante / mixto — ver F4)."""
 
     _attr_icon = "mdi:repeat-variant"
 
@@ -213,6 +214,7 @@ class MySairModeSensor(AvailabilityMixin, SensorEntity):
         self._attr_name = name
         self._attr_unique_id = f"mysair_mode_{inst_ref}_{device_id}"
         self._state = "OFF"
+        self._medium = None
         self._unsub = None
         self._init_availability()
 
@@ -229,6 +231,10 @@ class MySairModeSensor(AvailabilityMixin, SensorEntity):
     @property
     def native_value(self):
         return self._state
+
+    @property
+    def extra_state_attributes(self):
+        return {"medio": self._medium}
 
     async def async_added_to_hass(self):
         self._unsub = async_dispatcher_connect(
@@ -256,6 +262,19 @@ class MySairModeSensor(AvailabilityMixin, SensorEntity):
         if new_state != self._state:
             self._state = new_state
             _LOGGER.debug(f"[MySair Sensor] 🔄 {self._attr_name}: {self._state}")
+
+        # Medio activo (F4/AC-vs-suelo): 'm' distingue AC-solo/suelo-solo/mixto
+        # con independencia de encendido/apagado (se conserva aunque la zona
+        # esté apagada). Ver docs/protocol-findings.md §4.
+        if zone.get("is_ac") and zone.get("is_floor"):
+            self._medium = "mixto"
+        elif zone.get("is_floor"):
+            self._medium = "suelo"
+        elif zone.get("is_ac"):
+            self._medium = "ac"
+        else:
+            self._medium = None
+
         self.async_write_ha_state()
 
 

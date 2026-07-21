@@ -6,6 +6,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.10.2] - 2026-07-21
+
+### Added
+- Nuevo atributo `medio` en `sensor.<zona>_modo`: indica si la zona está usando aire acondicionado (`ac`), suelo radiante (`suelo`) o ambos combinados (`mixto`), en un solo valor en vez de tener que combinar `climate.<zona>` y `switch.<zona>_suelo` manualmente. Se conserva aunque la zona esté apagada.
+
 ## [2.10.1] - 2026-07-21
 
 ### Changed
