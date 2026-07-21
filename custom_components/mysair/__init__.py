@@ -116,7 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             # docs/protocol-findings.md §8). Evento propio, no mysair_update.
             elif topic.endswith("/feedback"):
                 feedback = parse_feedback_payload(payload)
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[MySair MQTT] ✅ Confirmación recibida: orderId={feedback['order_id']} "
                     f"ctl={feedback['ctl']}"
                 )

@@ -69,7 +69,7 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         try:
             # Encender = enviar comando 'mode' (no existe power "1"). Preservamos el
             # último modo calor/frío conocido; por defecto calor. Ver docs/protocol-findings.md.
-            _LOGGER.info(f"[MySair Switch] 🔛 Encendiendo {self.name} (modo {self._last_ac_mode})")
+            _LOGGER.debug(f"[MySair Switch] 🔛 Encendiendo {self.name} (modo {self._last_ac_mode})")
             response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,
@@ -91,7 +91,7 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
     async def async_turn_off(self, **kwargs):
         previous_is_on = self._is_on
         try:
-            _LOGGER.info(f"[MySair Switch] ⛔ Apagando {self.name}")
+            _LOGGER.debug(f"[MySair Switch] ⛔ Apagando {self.name}")
             response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
                 self.inst_ref,

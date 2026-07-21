@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfTemperature, PERCENTAGE
 from homeassistant.components.sensor import SensorDeviceClass
@@ -6,18 +7,24 @@ from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .availability import AvailabilityMixin
-from .const import DOMAIN
+from .const import DOMAIN, SCAN_INTERVAL as _SCAN_INTERVAL_SECONDS
 from .coordinator import signal_zone_update
 
 _LOGGER = logging.getLogger(__name__)
+
+# Respetado automáticamente por HA para las entidades de este platform con
+# should_poll=True (MySairMqttStatusSensor); los sensores por zona usan
+# should_poll=False (AvailabilityMixin) y no se ven afectados.
+SCAN_INTERVAL = timedelta(seconds=_SCAN_INTERVAL_SECONDS)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
     """Configura los sensores MySair (temperaturas y modo por zona)."""
     data = hass.data[DOMAIN][entry.entry_id]
     devices = data["devices"]
+    mqtt_client = data["mqtt"]
 
-    entities = []
+    entities = [MySairMqttStatusSensor(hass, entry.entry_id, mqtt_client)]
     for inst_ref, device_list in devices.items():
         for dev in device_list:
             dev_id = dev.get("reference") or dev.get("rf") or dev.get("id")
@@ -29,6 +36,56 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     async_add_entities(entities)
     _LOGGER.info(f"[MySair Sensor] ✅ {len(entities)} sensores creados.")
+
+
+# ==========================================================
+# 📶 SENSOR DE ESTADO DE CONEXIÓN MQTT (D3/D4)
+# ==========================================================
+class MySairMqttStatusSensor(SensorEntity):
+    """Estado de la conexión MQTT (D3) y métricas de reconexión/parseo (D4).
+
+    Una instancia por config entry (no por zona): a diferencia del resto de
+    sensores, no depende de datos de una zona concreta ni de AvailabilityMixin
+    (su propia "no disponibilidad" no tiene sentido — incluso "offline" es
+    información válida). Se actualiza por sondeo (should_poll=True) leyendo
+    directamente el estado en vivo de MySairMQTTClient.
+    """
+
+    _attr_icon = "mdi:wifi"
+    _attr_should_poll = True
+    _attr_name = "MySair Conexión MQTT"
+
+    def __init__(self, hass, entry_id, mqtt_client):
+        self.hass = hass
+        self.entry_id = entry_id
+        self.mqtt_client = mqtt_client
+        self._attr_unique_id = f"mysair_mqtt_status_{entry_id}"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self.entry_id)},
+            "name": "MySair (cuenta)",
+            "manufacturer": "MySair",
+            "model": "Integración",
+        }
+
+    @property
+    def native_value(self):
+        return "online" if self.mqtt_client.connected else "offline"
+
+    @property
+    def extra_state_attributes(self):
+        last = self.mqtt_client.last_message_at
+        return {
+            "last_update": last.isoformat() if last else None,
+            "reconnect_attempts": self.mqtt_client.reconnect_attempt,
+            "total_reconnects": self.mqtt_client.total_reconnects,
+            "parse_strict_count": self.mqtt_client.parse_strict_count,
+            "parse_fallback_count": self.mqtt_client.parse_fallback_count,
+            "parse_error_count": self.mqtt_client.parse_error_count,
+            "last_close_code": self.mqtt_client.last_close_code,
+        }
 
 
 # ==========================================================

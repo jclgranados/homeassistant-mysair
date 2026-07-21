@@ -95,7 +95,7 @@ Los tests y la documentación están en la raíz del repo.
 | `command_feedback.py` | `CommandFeedbackMixin`: correlación de comandos con el ACK de `mysair_feedback` (climate/switch) |
 | `availability.py` | `AvailabilityMixin`: `should_poll=False` + `available` según frescura del último status MQTT (todas las entidades) |
 | `climate.py` | `MySairThermostat` (ClimateEntity) |
-| `sensor.py` | 4 sensores por zona (temp actual, consigna, modo, humedad) |
+| `sensor.py` | 4 sensores por zona (temp actual, consigna, modo, humedad) + `MySairMqttStatusSensor` (D3/D4): 1 por config entry, estado online/offline y métricas de reconexión/parseo |
 | `switch.py` | `MySairSwitch` (power on/off) |
 | `config_flow.py` | Config flow (email + password) |
 | `const.py` | Constantes (algunas sin uso: `HVAC_MODES` con `auto`, `SCAN_INTERVAL`) |
@@ -249,6 +249,8 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **F5 (servicio `mysair.stop_installation`):** detiene una instalación completa con un comando en vez de apagar zona por zona; registrado una vez por dominio y retirado al descargar la última entrada. Ver Tarea 22.
 - ✅ **C4 (traducciones):** `strings.json` (inglés, referencia/fallback) + `translations/es.json` para el config flow (pasos, errores, abort) y el servicio `mysair.stop_installation`. Alcance deliberado: no incluye nombres de entidad (`climate`/`sensor`/`switch` siguen hardcodeados en español) — migrarlos a `has_entity_name`/`translation_key` cambiaría el nombre visible de entidades ya instaladas, se descartó por el riesgo frente al valor. Ver Tarea 23.
 - ✅ **C1 (coordinador central de estado por zona):** `coordinator.py` nuevo — `MySairCoordinator`, una instancia por config entry, sustituye las 6 suscripciones directas al bus (una por entidad de zona: climate/sensor×4/switch) que repetían el mismo filtrado de topic/ctl/zone_id. Ahora un único suscriptor por entry filtra una vez y redistribuye cada zona por separado vía `homeassistant.helpers.dispatcher`. `mqtt_message_callback` y `command_feedback.py` no se tocan; sin cambio de comportamiento observable (versión `2.7.0`→`2.7.1`, `PATCH`). Ver Tarea 24.
+- ✅ **D2 (redacción de logs y niveles):** `api.py` trunca los cuerpos de respuesta HTTP de error antes de loguearlos (`_truncate`); `mqtt_handler.py` enmascara el `aws_access_key_id` embebido en el `client_id` MQTT (`_redact_client_id`). Logs de alta frecuencia (mensaje MQTT recibido, comandos/instrucciones enviados, confirmaciones de feedback, acciones de usuario) bajados de INFO a DEBUG; se mantienen en INFO los eventos de ciclo de vida. Ver Tarea 25.
+- ✅ **D3+D4 (sensor de conexión MQTT + métricas):** `MySairMqttStatusSensor` (`sensor.py`), una entidad por config entry (no por zona): estado online/offline (`mqtt_client.connected`) y, como atributos, última actualización recibida, intentos/total de reconexiones, y contadores de mensajes decodificados por el método estricto/heurístico/fallidos. Mismas métricas añadidas a `diagnostics.py`. Versión `2.7.1`→`2.8.0` (`MINOR`). Ver Tarea 25.
 
 Pendientes:
 - 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente; los duplicados de `feedback` vistos en producción encajan aquí).

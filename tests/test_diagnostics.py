@@ -84,3 +84,11 @@ async def test_diagnostics_includes_installations_devices_and_mqtt_state(hass, m
     assert result["devices"] == {"INST_A": [{"reference": "DEV_1", "name": "Salon"}]}
     assert result["mqtt"]["connected"] is False
     assert result["mqtt"]["reconnect_attempt"] == 0
+    # Observabilidad D3/D4: sin mensajes ni reconexiones aún tras el setup inicial.
+    assert result["mqtt"]["last_message_at"] is None
+    assert result["mqtt"]["total_reconnects"] == 0
+    assert result["mqtt"]["parse_strict_count"] == 0
+    assert result["mqtt"]["parse_fallback_count"] == 0
+    assert result["mqtt"]["parse_error_count"] == 0
+    assert result["mqtt"]["last_close_code"] is None
+    assert result["mqtt"]["last_close_msg"] is None

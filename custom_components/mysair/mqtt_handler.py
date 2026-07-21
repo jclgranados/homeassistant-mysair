@@ -20,6 +20,19 @@ def log(msg, level="info"):
     getattr(_LOGGER, level.lower())(f"{now} {msg}")
 
 
+def _redact_client_id(client_id):
+    """Enmascara el ``access_key`` embebido en el clientId antes de loguearlo (D2).
+
+    ``build_client_id`` construye ``mqtt-client_<accessKey>_<ts>_<rand>``; el
+    access key ya se trata como sensible en ``diagnostics.py`` (TO_REDACT_API),
+    así que no debería aparecer en claro en los logs tampoco.
+    """
+    parts = client_id.split("_")
+    if len(parts) < 4 or parts[0] != "mqtt-client":
+        return client_id
+    return "_".join([parts[0], "***"] + parts[2:])
+
+
 # ==========================================================
 # 🔧 Utilidades MQTT (idénticas al script funcional)
 # ==========================================================
@@ -231,6 +244,20 @@ class MySairMQTTClient:
         self._mqtt_user = None  # aws_mqtt_user, para el topic de feedback
         self._credential_refresh_timer = None
         self._planned_reconnect = False
+        # --- Observabilidad (D3/D4): estado y métricas expuestas a
+        # diagnostics.py y a MySairMqttStatusSensor (sensor.py). ---
+        self.last_message_at = None  # D3: datetime UTC del último PUBLISH parseado con éxito
+        self.total_reconnects = 0  # D4: contador acumulado, no se resetea (a diferencia de _reconnect_attempt)
+        self.parse_strict_count = 0  # D4: PUBLISH decodificados por el método estricto
+        self.parse_fallback_count = 0  # D4: PUBLISH decodificados por la heurística de texto de respaldo
+        self.parse_error_count = 0  # D4: mensajes que no se pudieron parsear por ningún método
+        self.last_close_code = None  # D4: código de cierre del último _on_close
+        self.last_close_msg = None  # D4: mensaje de cierre del último _on_close
+
+    @property
+    def reconnect_attempt(self):
+        """Intentos de reconexión desde el último CONNACK logrado (se resetea al conectar)."""
+        return self._reconnect_attempt
 
     # ----------------------------------------------------------
     # 🔗 Conexión principal
@@ -276,11 +303,11 @@ class MySairMQTTClient:
         self._credential_refresh_timer = threading.Timer(delay, self._on_credential_refresh_due)
         self._credential_refresh_timer.daemon = True
         self._credential_refresh_timer.start()
-        log(f"⏳ [MySair MQTT] Refresco proactivo de conexión programado en {delay:.0f}s")
+        log(f"⏳ [MySair MQTT] Refresco proactivo de conexión programado en {delay:.0f}s", "debug")
 
     def _on_credential_refresh_due(self):
         """Fuerza una reconexión con credenciales frescas antes de que caduquen."""
-        log("🔄 [MySair MQTT] Refrescando conexión antes de que caduquen las credenciales AWS...")
+        log("🔄 [MySair MQTT] Refrescando conexión antes de que caduquen las credenciales AWS...", "debug")
         self._planned_reconnect = True
         if self.ws:
             try:
@@ -307,6 +334,7 @@ class MySairMQTTClient:
                     )
                     log(f"❌ [MySair MQTT] No se pudieron obtener credenciales AWS. Reintentando en {delay:.1f}s.", "error")
                     self._reconnect_attempt += 1
+                    self.total_reconnects += 1
                     time.sleep(delay)
                     continue
 
@@ -326,7 +354,7 @@ class MySairMQTTClient:
 
                 # Generar URL firmada (no se loguea: contiene la firma AWS)
                 signed_url = self.api.aws_sign_url(host, region, access_key, secret_key, token)
-                log(f"🔗 [MySair MQTT] Conectando a {host} como {client_id}")
+                log(f"🔗 [MySair MQTT] Conectando a {host} como {_redact_client_id(client_id)}", "debug")
 
                 # Configurar cliente WebSocket
                 headers = {"Sec-WebSocket-Protocol": "mqtt"}
@@ -363,6 +391,7 @@ class MySairMQTTClient:
                     )
                     log(f"🔁 [MySair MQTT] Reintentando conexión en {delay:.1f}s (intento {self._reconnect_attempt + 1})...")
                     self._reconnect_attempt += 1
+                    self.total_reconnects += 1
                     time.sleep(delay)
 
     # ----------------------------------------------------------
@@ -371,10 +400,10 @@ class MySairMQTTClient:
     def _on_open(self, ws, client_id, username, password):
         """Evento: WebSocket abierto."""
         try:
-            log("✅ [MySair MQTT] WebSocket abierto, enviando paquete CONNECT...")
+            log("✅ [MySair MQTT] WebSocket abierto, enviando paquete CONNECT...", "debug")
             pkt = build_mqtt_connect(client_id, username, password)
             ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
-            log("📤 [MySair MQTT] CONNECT enviado.")
+            log("📤 [MySair MQTT] CONNECT enviado.", "debug")
         except Exception as e:
             log(f"❌ [MySair MQTT] Error enviando CONNECT: {e}", "error")
 
@@ -391,7 +420,7 @@ class MySairMQTTClient:
                     topic = build_status_topic(self._base_topic, ref)
                     pkt = build_mqtt_subscribe(packet_id, topic)
                     ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
-                    log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {topic}")
+                    log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {topic}", "debug")
                     packet_id += 1
 
                 # Confirmación (ACK) de instrucciones enviadas por HTTP, ver
@@ -400,12 +429,12 @@ class MySairMQTTClient:
                     feedback_topic = build_feedback_topic(self._base_topic, self._mqtt_user)
                     pkt = build_mqtt_subscribe(packet_id, feedback_topic)
                     ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
-                    log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {feedback_topic}")
+                    log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {feedback_topic}", "debug")
                 return
 
             # SUBACK
             if message.startswith(b"\x90"):
-                log("✅ [MySair MQTT] SUBACK recibido.")
+                log("✅ [MySair MQTT] SUBACK recibido.", "debug")
                 return
 
             # Mensaje de tipo PUBLISH
@@ -421,6 +450,7 @@ class MySairMQTTClient:
                         decoded = strict_payload.decode("utf-8", errors="ignore").strip()
                         data, _ = _extract_json(decoded)
                         topic = strict_topic
+                        self.parse_strict_count += 1  # D4
                     else:
                         payload = message.split(b"\x00", 2)[-1]
                         decoded = payload.decode("utf-8", errors="ignore").strip()
@@ -430,13 +460,16 @@ class MySairMQTTClient:
                         # veces es "(topic){json}", a veces "topic{json}" sin
                         # paréntesis (p. ej. el topic de feedback).
                         topic = decoded[:start].strip(" ()") if start > 0 else "unknown"
+                        self.parse_fallback_count += 1  # D4
 
-                    log(f"📥 [MySair MQTT] Mensaje MQTT recibido ({topic}): {decoded[:200]}...")
+                    self.last_message_at = datetime.datetime.now(datetime.timezone.utc)  # D3
+                    log(f"📥 [MySair MQTT] Mensaje MQTT recibido ({topic}): {decoded[:200]}...", "debug")
 
                     if self.message_callback:
                         self.message_callback({"topic": topic, "payload": data})
 
                 except Exception as e:
+                    self.parse_error_count += 1  # D4
                     log(f"⚠️ [MySair MQTT] Error procesando mensaje: {e}", "warning")
         except Exception as e:
             log(f"⚠️ [MySair MQTT] Error general en _on_message: {e}", "warning")
@@ -447,4 +480,6 @@ class MySairMQTTClient:
     def _on_close(self, ws, close_status_code, close_msg):
         log(f"🔌 [MySair MQTT] Conexión cerrada (code={close_status_code}, msg={close_msg})")
         self.connected = False
+        self.last_close_code = close_status_code  # D4
+        self.last_close_msg = close_msg  # D4
 

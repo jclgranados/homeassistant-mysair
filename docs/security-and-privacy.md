@@ -13,7 +13,7 @@
 | `refresh_token` | `entry.data["refresh_token"]` (rota en cada renovación; se persiste la nueva versión vía `on_tokens_refreshed`) | Config entry (disco) | 🟡 Medio (permite renovar sesión sin password) | Confirmado (`api.py`, `__init__.py`) |
 | `access_token` | Solo en memoria (`MySairAPI.access_token`); se reconstruye en cada arranque a partir del `refresh_token` | No persistida | 🟢 Bajo | Confirmado |
 | Credenciales AWS IoT (`aws_access_key_id`, `aws_secret_access_key`, `aws_security_token`) | `MySairAPI.aws_credentials` | Solo memoria | 🟡 Medio (temporales) | Confirmado (`api.py:121-128`) |
-| URL MQTT firmada (contiene credencial + firma) | Variable local en `_run` | Solo memoria; **se loguea truncada a 120 chars** | 🟡 Medio | Confirmado (`mqtt_handler.py:131`) |
+| URL MQTT firmada (contiene credencial + firma) | Variable local en `_run` | Solo memoria; **no se loguea en ningún punto** (solo se loguea `host`) | 🟢 Bajo (resuelto, D2) | Confirmado (`mqtt_handler.py`, 2026-07-21) |
 
 **No hay secretos hardcodeados en el repositorio.** Lo único fijo es el host público `https://api.mysair.es/v1` (`api.py:18`, no es secreto) y el fallback `web0077` para `app` (`api.py:252`, identificador de cliente, no secreto). **Confirmado.**
 
@@ -21,20 +21,25 @@
 
 ## 2. Riesgos por logging
 
+> ✅ **Actualizado (D2, 2026-07-21):** las filas de esta tabla estaban desfasadas
+> respecto al código real (la URL firmada truncada a 120 caracteres ya no existía;
+> solo se logueaba `host`). Se corrigen aquí y se documentan los cambios de D2.
+
 | Log | Contenido potencialmente sensible | Severidad | Ubicación |
 |---|---|---|---|
-| `URL MQTT firmada [:120]` | Prefijo de la firma AWS (incluye `X-Amz-Credential`, access key parcial) | 🟡 Media | `mqtt_handler.py:131` |
-| `Credenciales AWS obtenidas para usuario {aws_mqtt_user}` | Username MQTT (no secreto crítico) | Baja | `api.py:130` |
-| `Enviando instrucción: {instruction}` (nivel INFO) | `app` (=aws_mqtt_user), refs; sin token | Baja | `api.py:197` |
-| `Mensaje MQTT recibido [:200]` | Estado de zonas (datos personales de uso) | Baja | `mqtt_handler.py:191` |
-| `Login {email}` | Email del usuario | Baja | `api.py:31` |
+| `client_id` MQTT (`mqtt-client_{access_key}_...`) | `aws_access_key_id` en claro | 🟡 Media → ✅ Resuelto (D2): se enmascara con `_redact_client_id` y el log bajó a `DEBUG` | `mqtt_handler.py` |
+| `resp.text` en logs de error HTTP (login, refresh, credenciales AWS, locations/installations/devices, send_instruction) | Cuerpo de error del backend sin límite; el endpoint de credenciales AWS es el más sensible | 🟡 Media → ✅ Resuelto (D2): truncado a 200 caracteres con `_truncate()` | `api.py` |
+| `Credenciales AWS obtenidas para usuario {aws_mqtt_user}` | Username MQTT (no secreto crítico) | Baja → bajado a `DEBUG` (D2) | `api.py` |
+| `Enviando instrucción/comando: {instruction}` | `app` (=aws_mqtt_user), refs; sin token | Baja → bajado a `DEBUG` (D2, además de alta frecuencia: se dispara en cada comando y en el refresco periódico) | `api.py` |
+| `Mensaje MQTT recibido [:200]` | Estado de zonas (datos personales de uso) | Baja → bajado a `DEBUG` (D2, es el log de mayor frecuencia de todo el proyecto: uno por cada mensaje MQTT) | `mqtt_handler.py` |
+| `Login {email}` | Email del usuario | Baja (se mantiene en INFO: evento de ciclo de vida, una vez por arranque) | `api.py` |
 
-**Riesgo positivo:** en ningún log se imprime `password`, `access_token`, `aws_secret_access_key` ni `aws_security_token` completos. **Confirmado.**
+**Riesgo positivo:** en ningún log se imprime `password`, `access_token`, `aws_secret_access_key` ni `aws_security_token` completos. **Confirmado**, y ahora tampoco `aws_access_key_id` (vía `client_id`).
 
 **Recomendaciones de redacción:**
-- No loguear ninguna parte de la URL firmada (ni truncada). Loguear solo el `host`.
-- Bajar a `DEBUG` los logs INFO con contenido operativo.
-- Considerar un filtro de logging que enmascare patrones `X-Amz-*` y `Bearer <...>`.
+- ✅ No se loguea ninguna parte de la URL firmada (ni truncada). Solo se loguea el `host`.
+- ✅ Bajados a `DEBUG` los logs de alta frecuencia (D2): mensajes MQTT recibidos, comandos/instrucciones enviados, confirmaciones de feedback, acciones de usuario en climate/switch. Se mantienen en `INFO` los eventos de ciclo de vida (login, tokens renovados, conexión/desconexión MQTT, arranque/parada, entidades creadas).
+- 🟡 Pendiente: un filtro de logging genérico que enmascare patrones `X-Amz-*`/`Bearer <...>` en cualquier log futuro no revisado explícitamente (D2 solo cubrió los puntos identificados en esta auditoría).
 
 ---
 
