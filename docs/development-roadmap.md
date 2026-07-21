@@ -91,7 +91,7 @@
 | G1 | `hacs.json` + estructura `custom_components/mysair/` para instalación vía HACS. | ✅ Hecho |
 | G2 | README completo: instalación, configuración, limitaciones, aviso de "no oficial". | ✅ Hecho |
 | G3 | Versionado semántico y CHANGELOG. | ✅ Hecho |
-| G4 | Ajustar/retirar `quality_scale` hasta cumplir requisitos. | 🟡 Retomado (2026-07-21) — icono de marca añadido vía `custom_components/mysair/brand/` (mecanismo local de HA ≥2026.3.0, sin necesidad de PR a `home-assistant/brands`; ver anuncio oficial "Custom integrations can now ship their own brand images"). `quality_scale: silver` añadido de nuevo al manifiesto; pendiente de confirmar en CI (`hassfest`) si lo acepta para una integración custom. |
+| G4 | Ajustar/retirar `quality_scale` hasta cumplir requisitos. | ✅ Hecho (2026-07-21) — icono de marca añadido vía `custom_components/mysair/brand/` (mecanismo local de HA ≥2026.3.0, sin necesidad de PR a `home-assistant/brands`; ver anuncio oficial "Custom integrations can now ship their own brand images"). `quality_scale: silver` declarado en el manifiesto y **confirmado en CI**: `hassfest` lo acepta (PR #34, los tres jobs en verde). |
 | G5 | Ampliar `.gitignore` (`.env`, `*.har`, capturas). | ✅ Hecho |
 
 ---
@@ -100,7 +100,7 @@
 
 ~~A1 → A2 → A4 → A3 (estabilizar y limpiar) → A5/A6/A7 (requiere validación de protocolo) → B1–B3 (red de seguridad de tests)~~ — Fases A y B completas. `docs/known-unknowns.md` #6 (formato de frame MQTT, bloqueaba E1/E2) ya está resuelto — ninguna fila de esa tabla sigue marcada con riesgo 🔴 a día de hoy.
 
-**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), E (E1-E6) y F (F1-F6) completas; G completa salvo G4 (icono de marca ya añadido, `quality_scale: silver` pendiente de confirmar en CI). E6 y F6 resueltas como decisiones documentadas (no migrar / no desarrollar), F3 como decisión de "sin soporte de protocolo" con limpieza de código muerto.
+**Estado real (2026-07-21):** Fases A-G completas (todas). E6 y F6 resueltas como decisiones documentadas (no migrar / no desarrollar), F3 como decisión de "sin soporte de protocolo" con limpieza de código muerto, G4 confirmado en CI (`quality_scale: silver` aceptado por `hassfest`). No queda ninguna tarea numerada abierta en el roadmap.
 
 El trabajo pendiente que no encaja en una fase numerada vive en `docs/execution-plan.md` §Pendiente:
 traducción de nombres de entidad, icono de marca para `quality_scale: silver`, tests P3 de robustez MQTT
