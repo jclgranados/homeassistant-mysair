@@ -81,7 +81,7 @@ Comunes a climate/sensor/switch (Confirmado):
 - ✅ `async_added_to_hass`/`async_will_remove_from_hass` suscriben/desuscriben correctamente del bus.
 - 🟡 **Sin `available`** → las entidades nunca aparecen como "no disponible" aunque MQTT esté caído.
 - 🟡 **Sin `should_poll = False` explícito** (climate/sensor/switch). Por defecto `SensorEntity`/`ClimateEntity` tienen `should_poll=True` salvo que se declare lo contrario → HA podría intentar `update()` (inexistente) periódicamente. 🔎 verificar impacto; recomendable `_attr_should_poll = False`.
-- 🟡 `sw_version="v1.0"` hardcodeado; `model` difiere entre plataformas (`"Zonificador de aire"` vs `select.py` `"WiFi Thermostat"`). Inconsistencia cosmética.
+- 🟡 `sw_version="v1.0"` hardcodeado. ~~`model` difiere entre plataformas (`"Zonificador de aire"` vs `select.py` `"WiFi Thermostat"`)~~ — `select.py` ya no existe (eliminado en A3); `model` es ahora `"Zonificador de climatización"` de forma consistente en climate/sensor/switch (2026-07-21, para reflejar que también controla suelo radiante, no solo AC).
 
 ### climate.py específico
 - ✅ `supported_features`: `TARGET_TEMPERATURE | TURN_ON | TURN_OFF`.

@@ -6,6 +6,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-07-21
+
+### Changed
+- El `model` del dispositivo (mostrado en la página de dispositivo de Home Assistant) pasa de `"Zonificador de aire"` a `"Zonificador de climatización"` en climate/sensor/switch, para reflejar que también controla suelo radiante, no solo aire acondicionado. Cambio cosmético, sin efecto en `unique_id` ni en el emparejamiento de entidades.
+
 ## [2.10.0] - 2026-07-21
 
 ### Added

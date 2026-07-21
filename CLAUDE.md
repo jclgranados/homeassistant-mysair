@@ -1,6 +1,6 @@
 # CLAUDE.md — Guía para sesiones de Claude Code
 
-Integración **custom de Home Assistant** para el sistema de zonificación de aire acondicionado **MySair**. Construida por ingeniería inversa de la app web oficial (API HTTP + AWS IoT MQTT). Toda la documentación de referencia está en `docs/`.
+Integración **custom de Home Assistant** para el sistema de zonificación de climatización **MySair** (aire acondicionado y/o suelo radiante, combinables por zona). Construida por ingeniería inversa de la app web oficial (API HTTP + AWS IoT MQTT). Toda la documentación de referencia está en `docs/`.
 
 ---
 

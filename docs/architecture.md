@@ -7,7 +7,7 @@
 
 ## 1. Resumen del sistema
 
-MySair es un sistema de **zonificación de aire acondicionado** controlado desde la nube. Esta integración (custom component, dominio `mysair`) permite a Home Assistant:
+MySair es un sistema de **zonificación de climatización** (aire acondicionado y/o suelo radiante, combinables por zona — ver `m` en `docs/protocol-findings.md` §4) controlado desde la nube. Esta integración (custom component, dominio `mysair`) permite a Home Assistant:
 
 - Autenticarse contra la API HTTP de MySair (`https://api.mysair.es/v1`). **Confirmado** — `api.py:18`.
 - Descubrir la topología: *ubicaciones → instalaciones → dispositivos (termostatos/zonas)*. **Confirmado** — `__init__.py:34-55`.
