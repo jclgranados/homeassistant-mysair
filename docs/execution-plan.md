@@ -31,6 +31,7 @@
 | 21 | E7 parte 2 (revertir estado optimista) + E1 (parser MQTT conforme al estándar) | `command_feedback.py`, `climate.py`, `switch.py`, `mqtt_handler.py` | 🟠 Alta | ✅ Hecho (166 tests verdes) |
 | 22 | Backoff con jitter (E3), `diagnostics.py` (D1), servicio `mysair.stop_installation` (F5) | `mqtt_handler.py`, `diagnostics.py` (nuevo), `api.py`, `__init__.py`, `services.yaml` (nuevo) | 🟡 Media | ✅ Hecho (180 tests verdes en Docker) |
 | 23 | Traducciones: config flow + servicio (C4) | `strings.json` (nuevo), `translations/es.json` (nuevo) | 🟡 Media | ✅ Hecho |
+| 24 | Coordinador central de estado por zona (C1) | `coordinator.py` (nuevo), `__init__.py`, `climate.py`, `switch.py`, `sensor.py` | 🟡 Media | ✅ Hecho |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -203,13 +204,20 @@
 - Sin tests nuevos: son ficheros de datos estáticos sin lógica que probar; la validación real la hace `hassfest` en CI (ya en el pipeline).
 - Pendiente de confirmar en CI: si `manifest.json` puede volver a declarar `quality_scale: silver` sin que `hassfest` lo rechace (algunas claves de manifiesto están restringidas a integraciones core). Aunque lo acepte, según el propio criterio de este proyecto (`docs/execution-plan.md` Tarea 11) reclamar silver también requeriría el icono de marca en `home-assistant/brands` (PR a un repo externo), que sigue sin hacerse — se deja como decisión pendiente con el usuario, no se reclama automáticamente en esta tarea.
 
+### Tarea 24 — Coordinador central de estado por zona (C1)
+- **Problema:** cada mensaje MQTT de `status` se redistribuía disparando `hass.bus.async_fire(f"{DOMAIN}_update", ...)`, y las 6 entidades por zona (`MySairThermostat`, `MySairSwitch`, y las 4 clases de `sensor.py`) se suscribían cada una por su cuenta a ese evento global, repitiendo en su propio `_handle_mqtt_update` el mismo filtrado (`topic.endswith("/status")`, `ctl == self.inst_ref`, bucle sobre `zones` buscando `zone_id == self.device_id`). Con N zonas, un solo mensaje disparaba 6×N listeners recorriendo la misma lista.
+- **Solución:** `coordinator.py` (nuevo) — `MySairCoordinator`, una instancia por config entry, se suscribe una sola vez a `mysair_update`, filtra por instalación propia (`ctl in installation_refs`) y redistribuye cada zona por separado con `homeassistant.helpers.dispatcher.async_dispatcher_send(hass, signal_zone_update(ctl, zone_id), zone)`. Cada entidad pasa de `hass.bus.async_listen(...)` + filtrado manual a `async_dispatcher_connect(hass, signal_zone_update(inst_ref, device_id), self._handle_zone_update)`, recibiendo la zona ya aislada y filtrada; `_handle_mqtt_update(self, event)` se renombra a `_handle_zone_update(self, zone)` en las 6 clases, sin el envoltorio de topic/ctl/bucle.
+- `mqtt_message_callback` (`__init__.py`) **no se toca**: sigue disparando el mismo evento de bus, así que ni la producción ni los tests (`_fire_status()` en `test_entities.py`) notan diferencia en el punto de entrada. `command_feedback.py` (evento `mysair_feedback`, revert optimista) y `availability.py` quedan intactos.
+- `hass.data[DOMAIN][entry.entry_id]` gana la clave `"coordinator"`; se arranca en `async_setup_entry` antes de `async_forward_entry_setups` (para que ya esté escuchando cuando las entidades se den de alta) y se detiene en `async_unload_entry` junto al cliente MQTT.
+- **Sin cambio de comportamiento observable** — refactor interno de eficiencia/mantenibilidad. Versión `2.7.0` → `2.7.1` (`PATCH`, según la propia regla semver del proyecto).
+- Tests: `tests/test_coordinator.py` nuevo (4 tests: ignora `ctl` ajeno, redistribuye cada zona de un mensaje multi-zona de forma independiente, ignora topics que no son `/status`, `stop()` desuscribe). `tests/test_entities.py` sin modificar — verificado caso por caso que todos sus tests (incluido `test_event_from_other_installation_is_ignored`) siguen pasando con el mismo comportamiento observable, ya que `_fire_status()` sigue disparando el mismo evento de bus que ahora escucha el coordinador en vez de cada entidad.
+
 ### Pendiente (no bloqueado, siguiente)
 - F6: temporizador/programas (más especulativo, entidades nuevas).
 - F3: modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero `climate.py` no lo expone).
 - F4: `select` de modo reescrito y funcional (`select.py` original se eliminó en A3 por estar roto).
 - Traducción de nombres de entidad (`has_entity_name`/`translation_key`) — ampliación futura de C4, descartada en la Tarea 23 por cambiar nombres visibles de entidades ya instaladas.
 - Icono de marca en `home-assistant/brands` — requisito pendiente para poder reclamar `quality_scale: silver` de verdad, aunque `hassfest` acepte el campo.
-- C1: coordinador central de estado (refactor grande, no abordado).
 - D2-D4: redacción de logs sensibles, sensor de estado de conexión MQTT, métricas de reconexión/errores de parsing.
 - E2: manejo de frames parciales / múltiples paquetes por frame WS.
 - E4: validación de esquema de payloads (rechazar/loguear los inesperados).

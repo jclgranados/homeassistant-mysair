@@ -7,10 +7,12 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .availability import AvailabilityMixin
 from .command_feedback import CommandFeedbackMixin
 from .const import DOMAIN
+from .coordinator import signal_zone_update
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,7 +88,9 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
 
     async def async_added_to_hass(self):
         _LOGGER.debug(f"[MySair Climate] 🧩 Entidad añadida: {self._attr_name} ({self.inst_ref}/{self.device_id})")
-        self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+        self._unsub = async_dispatcher_connect(
+            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+        )
         self._start_feedback_listener()
 
     async def async_will_remove_from_hass(self):
@@ -235,69 +239,55 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
     # EVENTOS MQTT → ACTUALIZACIÓN DE ESTADO
     # ------------------------------------------------------------------
     @callback
-    def _handle_mqtt_update(self, event):
-        topic = event.data.get("topic", "")
-        data = event.data.get("data", {})
-        if not topic.endswith("/status"):
-            return
+    def _handle_zone_update(self, zone):
+        _LOGGER.debug(f"[MySair Climate] 📨 Evento recibido para {self._attr_name}")
+        self._mark_status_received()
+        # Un status real es la verdad más fresca: descarta cualquier
+        # comando pendiente de confirmar (y su revert), ya no hace falta.
+        self._clear_pending_command()
+        if zone.get("temp_actual") is not None:
+            self._current_temperature = zone.get("temp_actual")
+        if zone.get("temp_target") is not None:
+            self._target_temperature = zone.get("temp_target")
+        if zone.get("temp_min") is not None:
+            self._attr_min_temp = zone.get("temp_min")
+        if zone.get("temp_max") is not None:
+            self._attr_max_temp = zone.get("temp_max")
 
-        ctl = data.get("ctl")
-        if ctl != self.inst_ref:
-            return
+        # Disponibilidad real de calor/frío según capacidades de la zona
+        # (c/f, ver docs/protocol-findings.md). Siempre se permite OFF.
+        modes = [HVACMode.OFF]
+        if zone.get("allow_heat"):
+            modes.append(HVACMode.HEAT)
+        if zone.get("allow_cool"):
+            modes.append(HVACMode.COOL)
+        self._attr_hvac_modes = modes
 
-        zones = data.get("zones", [])
-        for zone in zones:
-            if zone.get("zone_id") != self.device_id:
-                continue
+        # Velocidad de ventilador (vv/fanspeed, ver docs/protocol-findings.md §9).
+        self._attr_fan_modes = list(_FAN_MODES) if zone.get("allow_fan") else []
+        self._fan_mode = _FAN_MODE_WIRE_TO_HA.get(zone.get("fan_mode"))
 
-            _LOGGER.debug(f"[MySair Climate] 📨 Evento recibido para {self._attr_name}")
-            self._mark_status_received()
-            # Un status real es la verdad más fresca: descarta cualquier
-            # comando pendiente de confirmar (y su revert), ya no hace falta.
-            self._clear_pending_command()
-            if zone.get("temp_actual") is not None:
-                self._current_temperature = zone.get("temp_actual")
-            if zone.get("temp_target") is not None:
-                self._target_temperature = zone.get("temp_target")
-            if zone.get("temp_min") is not None:
-                self._attr_min_temp = zone.get("temp_min")
-            if zone.get("temp_max") is not None:
-                self._attr_max_temp = zone.get("temp_max")
+        # 'e' = encendido (on/off/standby); calor/frío = paridad de 'm'.
+        # Ver docs/protocol-findings.md.
+        if not zone.get("is_on"):
+            self._hvac_mode = HVACMode.OFF
+            self._hvac_action = HVACAction.OFF
+        else:
+            if zone.get("is_cool"):
+                self._hvac_mode = HVACMode.COOL
+            elif zone.get("is_heat"):
+                self._hvac_mode = HVACMode.HEAT
 
-            # Disponibilidad real de calor/frío según capacidades de la zona
-            # (c/f, ver docs/protocol-findings.md). Siempre se permite OFF.
-            modes = [HVACMode.OFF]
-            if zone.get("allow_heat"):
-                modes.append(HVACMode.HEAT)
-            if zone.get("allow_cool"):
-                modes.append(HVACMode.COOL)
-            self._attr_hvac_modes = modes
+            if zone.get("is_standby"):
+                self._hvac_action = HVACAction.IDLE
+            elif zone.get("is_cool"):
+                self._hvac_action = HVACAction.COOLING
+            elif zone.get("is_heat"):
+                self._hvac_action = HVACAction.HEATING
 
-            # Velocidad de ventilador (vv/fanspeed, ver docs/protocol-findings.md §9).
-            self._attr_fan_modes = list(_FAN_MODES) if zone.get("allow_fan") else []
-            self._fan_mode = _FAN_MODE_WIRE_TO_HA.get(zone.get("fan_mode"))
-
-            # 'e' = encendido (on/off/standby); calor/frío = paridad de 'm'.
-            # Ver docs/protocol-findings.md.
-            if not zone.get("is_on"):
-                self._hvac_mode = HVACMode.OFF
-                self._hvac_action = HVACAction.OFF
-            else:
-                if zone.get("is_cool"):
-                    self._hvac_mode = HVACMode.COOL
-                elif zone.get("is_heat"):
-                    self._hvac_mode = HVACMode.HEAT
-
-                if zone.get("is_standby"):
-                    self._hvac_action = HVACAction.IDLE
-                elif zone.get("is_cool"):
-                    self._hvac_action = HVACAction.COOLING
-                elif zone.get("is_heat"):
-                    self._hvac_action = HVACAction.HEATING
-
-            _LOGGER.debug(
-                f"[MySair Climate] 🔄 {self._attr_name}: {self._current_temperature}°C / "
-                f"{self._target_temperature}°C / {self._hvac_mode}"
-            )
-            self.async_write_ha_state()
+        _LOGGER.debug(
+            f"[MySair Climate] 🔄 {self._attr_name}: {self._current_temperature}°C / "
+            f"{self._target_temperature}°C / {self._hvac_mode}"
+        )
+        self.async_write_ha_state()
 

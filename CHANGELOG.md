@@ -6,6 +6,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.7.1] - 2026-07-21
+
+### Changed
+- Refactor interno: un único `MySairCoordinator` por config entry ahora escucha `mysair_update` una sola vez y redistribuye cada zona por separado (`homeassistant.helpers.dispatcher`) a la entidad correspondiente, en vez de que las 6 entidades por zona (climate/sensor/switch) repitan cada una el mismo filtrado de topic/instalación/zona sobre el bus. Sin cambio de comportamiento observable.
+
 ## [2.7.0] - 2026-07-20
 
 ### Added
