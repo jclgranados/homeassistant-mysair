@@ -136,6 +136,35 @@ async def test_mode_sensor_reflects_off(hass, monkeypatch):
     assert hass.states.get("sensor.salon_modo").state == "OFF"
 
 
+@pytest.mark.parametrize(
+    "is_ac,is_floor,expected_medio",
+    [
+        (True, False, "ac"),
+        (False, True, "suelo"),
+        (True, True, "mixto"),
+        (False, False, None),
+    ],
+)
+async def test_mode_sensor_medio_attribute(hass, monkeypatch, is_ac, is_floor, expected_medio):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(is_ac=is_ac, is_floor=is_floor))
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.salon_modo").attributes["medio"] == expected_medio
+
+
+async def test_mode_sensor_medio_persists_while_off(hass, monkeypatch):
+    # 'm' (y por tanto el medio) se conserva aunque la zona esté apagada.
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(is_on=False, is_ac=True, is_floor=True))
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.salon_modo").state == "OFF"
+    assert hass.states.get("sensor.salon_modo").attributes["medio"] == "mixto"
+
+
 async def test_switch_updates_from_mqtt_event(hass, monkeypatch):
     await _setup_entry(hass, monkeypatch)
 

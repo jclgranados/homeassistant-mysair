@@ -9,9 +9,10 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/jclgranados/homeassistant-mysair/issues",
   "loggers": ["mysair"],
+  "quality_scale": "silver",
   "requirements": [
     "requests>=2.31.0",
     "websocket-client==1.8.0"
   ],
-  "version": "2.10.1"
+  "version": "2.11.0"
 }

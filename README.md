@@ -19,7 +19,7 @@ Integración **no oficial** de Home Assistant para el sistema de zonificación d
 | `switch.<zona>_suelo` | Switch | Suelo radiante encendido/apagado, combinable con el AC de la misma zona. Aparece como "no disponible" en zonas sin esa capacidad |
 | `sensor.<zona>_temperatura_actual` | Sensor | Temperatura actual de la zona |
 | `sensor.<zona>_temperatura_consigna` | Sensor | Temperatura objetivo (setpoint) |
-| `sensor.<zona>_modo` | Sensor | Modo actual (`OFF`/`HEAT`/`COOL`) |
+| `sensor.<zona>_modo` | Sensor | Modo actual (`OFF`/`HEAT`/`COOL`); atributo `medio` (`ac`/`suelo`/`mixto`) indica qué medio está activo, se conserva aunque la zona esté apagada |
 | `sensor.<zona>_humedad` | Sensor | Humedad relativa de la zona |
 
 ## Otras entidades
