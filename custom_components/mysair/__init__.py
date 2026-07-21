@@ -9,6 +9,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
     ServiceValidationError,
 )
+from homeassistant.helpers import device_registry as dr
 
 from .api import MySairAPI, MySairAuthError, MySairConnectionError
 from .coordinator import MySairCoordinator
@@ -33,6 +34,45 @@ def _persist_refresh_token(
     hass.config_entries.async_update_entry(
         entry, data={**entry.data, "refresh_token": refresh_token}
     )
+
+
+def _cleanup_stale_zone_devices(
+    hass: HomeAssistant, entry: ConfigEntry, all_devices: dict
+) -> None:
+    """Elimina dispositivos (y sus entidades) de zonas que ya no existen.
+
+    Cambio de topología entre reinicios (zona eliminada en la cuenta MySair):
+    Home Assistant no borra solo las entidades que una integración deja de
+    crear (ver docs/testing-strategy.md) — quedan huérfanas para siempre si
+    nadie las limpia. Cada zona tiene su propio dispositivo identificado por
+    ``(DOMAIN, f"{inst_ref}_{device_id}")`` (ver ``device_info`` en
+    climate.py/sensor.py/switch.py); el dispositivo de cuenta del sensor de
+    conexión MQTT usa ``entry.entry_id`` como identificador y nunca se toca
+    aquí, ya que no es una zona.
+    """
+    current_zone_ids = {
+        f"{inst_ref}_{dev.get('reference') or dev.get('rf') or dev.get('id')}"
+        for inst_ref, devices in all_devices.items()
+        for dev in devices
+    }
+    device_registry = dr.async_get(hass)
+    for device_entry in dr.async_entries_for_config_entry(
+        device_registry, entry.entry_id
+    ):
+        zone_ids = {
+            identifier
+            for (domain, identifier) in device_entry.identifiers
+            if domain == DOMAIN
+        }
+        if entry.entry_id in zone_ids:
+            continue  # dispositivo de cuenta (sensor de conexión MQTT), no es una zona
+        if not zone_ids & current_zone_ids:
+            _LOGGER.info(
+                f"[MySair] 🧹 Eliminando dispositivo huérfano (zona ya no existe): {zone_ids}"
+            )
+            device_registry.async_update_device(
+                device_entry.id, remove_config_entry_id=entry.entry_id
+            )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
@@ -104,6 +144,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         _LOGGER.info(
             f"[MySair] 📟 Instalación {ref}: {len(devices)} termostatos encontrados"
         )
+
+    _cleanup_stale_zone_devices(hass, entry, all_devices)
 
     # Guardar datos en memoria global
     hass.data.setdefault(DOMAIN, {})
