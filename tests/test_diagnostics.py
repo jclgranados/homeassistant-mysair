@@ -36,8 +36,16 @@ def _patch_happy_api(monkeypatch):
 
     monkeypatch.setattr(MySairAPI, "refresh_tokens", _mock_refresh_tokens_ok)
     monkeypatch.setattr(MySairAPI, "get_locations", lambda self: [{"id": 1001}])
-    monkeypatch.setattr(MySairAPI, "get_installations", lambda self, location_id: [{"reference": "INST_A"}])
-    monkeypatch.setattr(MySairAPI, "get_devices", lambda self, ref: [{"reference": "DEV_1", "name": "Salon"}])
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_installations",
+        lambda self, location_id: [{"reference": "INST_A"}],
+    )
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_devices",
+        lambda self, ref: [{"reference": "DEV_1", "name": "Salon"}],
+    )
     monkeypatch.setattr(MySairMQTTClient, "start", lambda self: None)
 
 
@@ -71,7 +79,9 @@ async def test_diagnostics_redacts_sensitive_fields(hass, monkeypatch):
     assert result["api"]["aws_base_topic"] == "mysair/web0000"
 
 
-async def test_diagnostics_includes_installations_devices_and_mqtt_state(hass, monkeypatch):
+async def test_diagnostics_includes_installations_devices_and_mqtt_state(
+    hass, monkeypatch
+):
     _patch_happy_api(monkeypatch)
     entry = _make_entry()
     entry.add_to_hass(hass)

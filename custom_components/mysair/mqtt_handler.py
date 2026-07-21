@@ -1,7 +1,5 @@
 import time
 import json
-import hmac
-import hashlib
 import random
 import struct
 import secrets
@@ -9,7 +7,6 @@ import datetime
 import logging
 import threading
 import websocket
-import urllib.parse
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,7 +65,7 @@ def decode_varint(data, offset=0):
         if not (byte & 0x80):
             break
         multiplier *= 128
-        if multiplier > 128 ** 3:
+        if multiplier > 128**3:
             return None, offset
     return value, pos
 
@@ -133,13 +130,13 @@ def parse_mqtt_publish(message):
 
     if len(message) < pos + 2:
         return None, None
-    topic_len = struct.unpack("!H", message[pos:pos + 2])[0]
+    topic_len = struct.unpack("!H", message[pos : pos + 2])[0]
     pos += 2
 
     if len(message) < pos + topic_len:
         return None, None
     try:
-        topic = message[pos:pos + topic_len].decode("utf-8")
+        topic = message[pos : pos + topic_len].decode("utf-8")
     except UnicodeDecodeError:
         return None, None
     pos += topic_len
@@ -175,13 +172,16 @@ def build_mqtt_connect(client_id, username, password):
     """Construye el paquete CONNECT MQTT."""
     protocol_name = b"\x00\x04MQTT"
     protocol_level = b"\x04"
-    connect_flags = b"\xC2"  # CleanSession + Username + Password
+    connect_flags = b"\xc2"  # CleanSession + Username + Password
     keep_alive = struct.pack("!H", 60)
 
     payload = (
-        struct.pack("!H", len(client_id)) + client_id.encode("utf-8") +
-        struct.pack("!H", len(username)) + username.encode("utf-8") +
-        struct.pack("!H", len(password)) + password.encode("utf-8")
+        struct.pack("!H", len(client_id))
+        + client_id.encode("utf-8")
+        + struct.pack("!H", len(username))
+        + username.encode("utf-8")
+        + struct.pack("!H", len(password))
+        + password.encode("utf-8")
     )
 
     variable_header = protocol_name + protocol_level + connect_flags + keep_alive
@@ -239,7 +239,9 @@ def build_feedback_topic(base_topic, mqtt_user):
     return f"{base}get/usr/{mqtt_user}/feedback"
 
 
-def compute_backoff_delay(attempt, base=10, max_delay=120, jitter_fraction=0.2, rng=None):
+def compute_backoff_delay(
+    attempt, base=10, max_delay=120, jitter_fraction=0.2, rng=None
+):
     """Retraso de reconexión con backoff exponencial y jitter (E3).
 
     ``attempt`` empieza en 0 para el primer reintento tras una conexión
@@ -251,7 +253,7 @@ def compute_backoff_delay(attempt, base=10, max_delay=120, jitter_fraction=0.2, 
     todos a la vez tras un fallo compartido (p. ej. un blip de red general).
     """
     rng = rng or random
-    delay = min(base * (2 ** attempt), max_delay)
+    delay = min(base * (2**attempt), max_delay)
     jitter = delay * jitter_fraction
     return max(delay + rng.uniform(-jitter, jitter), 0)
 
@@ -279,11 +281,17 @@ class MySairMQTTClient:
         self._planned_reconnect = False
         # --- Observabilidad (D3/D4): estado y métricas expuestas a
         # diagnostics.py y a MySairMqttStatusSensor (sensor.py). ---
-        self.last_message_at = None  # D3: datetime UTC del último PUBLISH parseado con éxito
+        self.last_message_at = (
+            None  # D3: datetime UTC del último PUBLISH parseado con éxito
+        )
         self.total_reconnects = 0  # D4: contador acumulado, no se resetea (a diferencia de _reconnect_attempt)
         self.parse_strict_count = 0  # D4: PUBLISH decodificados por el método estricto
-        self.parse_fallback_count = 0  # D4: PUBLISH decodificados por la heurística de texto de respaldo
-        self.parse_error_count = 0  # D4: mensajes que no se pudieron parsear por ningún método
+        self.parse_fallback_count = (
+            0  # D4: PUBLISH decodificados por la heurística de texto de respaldo
+        )
+        self.parse_error_count = (
+            0  # D4: mensajes que no se pudieron parsear por ningún método
+        )
         self.last_close_code = None  # D4: código de cierre del último _on_close
         self.last_close_msg = None  # D4: mensaje de cierre del último _on_close
         self._recv_buffer = b""  # E2: bytes WS acumulados aún no procesados (frames parciales/multi-paquete)
@@ -334,14 +342,22 @@ class MySairMQTTClient:
         delay = self.api.seconds_until_aws_credentials_expire()
         if delay is None:
             return
-        self._credential_refresh_timer = threading.Timer(delay, self._on_credential_refresh_due)
+        self._credential_refresh_timer = threading.Timer(
+            delay, self._on_credential_refresh_due
+        )
         self._credential_refresh_timer.daemon = True
         self._credential_refresh_timer.start()
-        log(f"⏳ [MySair MQTT] Refresco proactivo de conexión programado en {delay:.0f}s", "debug")
+        log(
+            f"⏳ [MySair MQTT] Refresco proactivo de conexión programado en {delay:.0f}s",
+            "debug",
+        )
 
     def _on_credential_refresh_due(self):
         """Fuerza una reconexión con credenciales frescas antes de que caduquen."""
-        log("🔄 [MySair MQTT] Refrescando conexión antes de que caduquen las credenciales AWS...", "debug")
+        log(
+            "🔄 [MySair MQTT] Refrescando conexión antes de que caduquen las credenciales AWS...",
+            "debug",
+        )
         self._planned_reconnect = True
         if self.ws:
             try:
@@ -364,9 +380,14 @@ class MySairMQTTClient:
                 aws = self.api.aws_credentials
                 if not aws:
                     delay = compute_backoff_delay(
-                        self._reconnect_attempt, base=self._reconnect_delay, max_delay=self._max_reconnect_delay
+                        self._reconnect_attempt,
+                        base=self._reconnect_delay,
+                        max_delay=self._max_reconnect_delay,
                     )
-                    log(f"❌ [MySair MQTT] No se pudieron obtener credenciales AWS. Reintentando en {delay:.1f}s.", "error")
+                    log(
+                        f"❌ [MySair MQTT] No se pudieron obtener credenciales AWS. Reintentando en {delay:.1f}s.",
+                        "error",
+                    )
                     self._reconnect_attempt += 1
                     self.total_reconnects += 1
                     time.sleep(delay)
@@ -376,7 +397,9 @@ class MySairMQTTClient:
                 host = aws.get("endpoint") or aws.get("aws_mqtt_host")
                 region = aws.get("region") or aws.get("aws_default_region")
                 access_key = aws.get("accessKeyId") or aws.get("aws_access_key_id")
-                secret_key = aws.get("secretAccessKey") or aws.get("aws_secret_access_key")
+                secret_key = aws.get("secretAccessKey") or aws.get(
+                    "aws_secret_access_key"
+                )
                 token = aws.get("sessionToken") or aws.get("aws_security_token")
                 # clientId único por conexión (no aws_mqtt_user) para evitar
                 # expulsiones mutuas con la app oficial. Ver docs/protocol-findings.md.
@@ -387,8 +410,13 @@ class MySairMQTTClient:
                 self._mqtt_user = username
 
                 # Generar URL firmada (no se loguea: contiene la firma AWS)
-                signed_url = self.api.aws_sign_url(host, region, access_key, secret_key, token)
-                log(f"🔗 [MySair MQTT] Conectando a {host} como {_redact_client_id(client_id)}", "debug")
+                signed_url = self.api.aws_sign_url(
+                    host, region, access_key, secret_key, token
+                )
+                log(
+                    f"🔗 [MySair MQTT] Conectando a {host} como {_redact_client_id(client_id)}",
+                    "debug",
+                )
 
                 # Configurar cliente WebSocket
                 headers = {"Sec-WebSocket-Protocol": "mqtt"}
@@ -417,13 +445,19 @@ class MySairMQTTClient:
             # jitter (E3), que se reinicia en el próximo CONNACK logrado.
             if not self.stop_event.is_set():
                 if self._planned_reconnect:
-                    log("🔁 [MySair MQTT] Reconectando de inmediato (refresco proactivo de credenciales)...")
+                    log(
+                        "🔁 [MySair MQTT] Reconectando de inmediato (refresco proactivo de credenciales)..."
+                    )
                     self._planned_reconnect = False
                 else:
                     delay = compute_backoff_delay(
-                        self._reconnect_attempt, base=self._reconnect_delay, max_delay=self._max_reconnect_delay
+                        self._reconnect_attempt,
+                        base=self._reconnect_delay,
+                        max_delay=self._max_reconnect_delay,
                     )
-                    log(f"🔁 [MySair MQTT] Reintentando conexión en {delay:.1f}s (intento {self._reconnect_attempt + 1})...")
+                    log(
+                        f"🔁 [MySair MQTT] Reintentando conexión en {delay:.1f}s (intento {self._reconnect_attempt + 1})..."
+                    )
                     self._reconnect_attempt += 1
                     self.total_reconnects += 1
                     time.sleep(delay)
@@ -434,7 +468,10 @@ class MySairMQTTClient:
     def _on_open(self, ws, client_id, username, password):
         """Evento: WebSocket abierto."""
         try:
-            log("✅ [MySair MQTT] WebSocket abierto, enviando paquete CONNECT...", "debug")
+            log(
+                "✅ [MySair MQTT] WebSocket abierto, enviando paquete CONNECT...",
+                "debug",
+            )
             pkt = build_mqtt_connect(client_id, username, password)
             ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
             log("📤 [MySair MQTT] CONNECT enviado.", "debug")
@@ -550,8 +587,13 @@ class MySairMQTTClient:
                 decoded = strict_payload.decode("utf-8", errors="ignore").strip()
                 data, _ = _extract_json(decoded)
                 self.parse_strict_count += 1  # D4
-                self.last_message_at = datetime.datetime.now(datetime.timezone.utc)  # D3
-                log(f"📥 [MySair MQTT] Mensaje MQTT recibido ({strict_topic}): {decoded[:200]}...", "debug")
+                self.last_message_at = datetime.datetime.now(
+                    datetime.timezone.utc
+                )  # D3
+                log(
+                    f"📥 [MySair MQTT] Mensaje MQTT recibido ({strict_topic}): {decoded[:200]}...",
+                    "debug",
+                )
 
                 if self.message_callback:
                     self.message_callback({"topic": strict_topic, "payload": data})
@@ -559,7 +601,9 @@ class MySairMQTTClient:
             except Exception as e:
                 self.parse_error_count += 1  # D4
                 log(f"⚠️ [MySair MQTT] Error procesando mensaje: {e}", "warning")
-                return True  # ya contabilizado como error; no reintentar como heurístico
+                return (
+                    True  # ya contabilizado como error; no reintentar como heurístico
+                )
 
         # Tipo de paquete desconocido/no manejado: se ignora en silencio,
         # igual que antes de E2.
@@ -579,7 +623,10 @@ class MySairMQTTClient:
             topic = decoded[:start].strip(" ()") if start > 0 else "unknown"
             self.parse_fallback_count += 1  # D4
             self.last_message_at = datetime.datetime.now(datetime.timezone.utc)  # D3
-            log(f"📥 [MySair MQTT] Mensaje MQTT recibido ({topic}): {decoded[:200]}...", "debug")
+            log(
+                f"📥 [MySair MQTT] Mensaje MQTT recibido ({topic}): {decoded[:200]}...",
+                "debug",
+            )
 
             if self.message_callback:
                 self.message_callback({"topic": topic, "payload": data})
@@ -591,8 +638,9 @@ class MySairMQTTClient:
         log(f"❌ [MySair MQTT] Error WebSocket: {error}", "error")
 
     def _on_close(self, ws, close_status_code, close_msg):
-        log(f"🔌 [MySair MQTT] Conexión cerrada (code={close_status_code}, msg={close_msg})")
+        log(
+            f"🔌 [MySair MQTT] Conexión cerrada (code={close_status_code}, msg={close_msg})"
+        )
         self.connected = False
         self.last_close_code = close_status_code  # D4
         self.last_close_msg = close_msg  # D4
-

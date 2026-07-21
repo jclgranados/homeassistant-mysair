@@ -11,10 +11,15 @@ pytest.importorskip("homeassistant")
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mysair.const import DOMAIN, SERVICE_STOP_INSTALLATION
-from custom_components.mysair.api import MySairAPI, MySairAuthError, MySairConnectionError
+from custom_components.mysair.api import (
+    MySairAPI,
+    MySairAuthError,
+    MySairConnectionError,
+)
 from custom_components.mysair.mqtt_handler import MySairMQTTClient
 
 
@@ -35,9 +40,21 @@ def _mock_refresh_tokens_raises(exc):
 def _patch_happy_api(monkeypatch):
     monkeypatch.setattr(MySairAPI, "refresh_tokens", _mock_refresh_tokens_ok)
     monkeypatch.setattr(MySairAPI, "get_locations", lambda self: [{"id": 1001}])
-    monkeypatch.setattr(MySairAPI, "get_installations", lambda self, location_id: [{"reference": "INST_A"}])
-    monkeypatch.setattr(MySairAPI, "get_devices", lambda self, ref: [{"reference": "DEV_1", "name": "Salon"}])
-    monkeypatch.setattr(MySairAPI, "send_instruction", lambda self, instruction: {"msg": "Creado", "error": []})
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_installations",
+        lambda self, location_id: [{"reference": "INST_A"}],
+    )
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_devices",
+        lambda self, ref: [{"reference": "DEV_1", "name": "Salon"}],
+    )
+    monkeypatch.setattr(
+        MySairAPI,
+        "send_instruction",
+        lambda self, instruction: {"msg": "Creado", "error": []},
+    )
     monkeypatch.setattr(MySairMQTTClient, "start", lambda self: None)
 
 
@@ -46,6 +63,16 @@ def _make_entry(refresh_token="OLD_REFRESH", extra_data=None):
     if extra_data:
         data.update(extra_data)
     return MockConfigEntry(domain=DOMAIN, unique_id="user@example.com", data=data)
+
+
+def _fire_status(hass, ctl, zone):
+    hass.bus.async_fire(
+        f"{DOMAIN}_update",
+        {
+            "topic": f"pro/v1/get/ctl/{ctl}/status",
+            "data": {"ctl": ctl, "zones": [zone]},
+        },
+    )
 
 
 async def test_setup_entry_success(hass, monkeypatch):
@@ -67,7 +94,9 @@ async def test_setup_entry_success(hass, monkeypatch):
 async def test_setup_entry_migrates_legacy_password_out(hass, monkeypatch):
     # A6: entradas creadas antes del cambio guardaban password/access_token en claro.
     _patch_happy_api(monkeypatch)
-    entry = _make_entry(extra_data={"password": "plaintext-leftover", "access_token": "OLD_TOKEN"})
+    entry = _make_entry(
+        extra_data={"password": "plaintext-leftover", "access_token": "OLD_TOKEN"}
+    )
     entry.add_to_hass(hass)
 
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -89,7 +118,9 @@ async def test_setup_entry_missing_refresh_token_triggers_reauth(hass, monkeypat
 
 async def test_setup_entry_invalid_session_triggers_reauth(hass, monkeypatch):
     monkeypatch.setattr(
-        MySairAPI, "refresh_tokens", _mock_refresh_tokens_raises(MySairAuthError("expired"))
+        MySairAPI,
+        "refresh_tokens",
+        _mock_refresh_tokens_raises(MySairAuthError("expired")),
     )
     entry = _make_entry()
     entry.add_to_hass(hass)
@@ -102,7 +133,9 @@ async def test_setup_entry_invalid_session_triggers_reauth(hass, monkeypatch):
 
 async def test_setup_entry_connection_error_retries(hass, monkeypatch):
     monkeypatch.setattr(
-        MySairAPI, "refresh_tokens", _mock_refresh_tokens_raises(MySairConnectionError("boom"))
+        MySairAPI,
+        "refresh_tokens",
+        _mock_refresh_tokens_raises(MySairConnectionError("boom")),
     )
     entry = _make_entry()
     entry.add_to_hass(hass)
@@ -155,7 +188,37 @@ async def test_unload_entry_cleans_up(hass, monkeypatch):
     assert stop_calls == [True]
 
 
+async def test_reload_entry_does_not_duplicate_entities_or_service(hass, monkeypatch):
+    # P3 (docs/testing-strategy.md): un reload no debe dejar entidades
+    # duplicadas, listeners colgados del coordinador/servicio anterior, ni
+    # romper la actualización vía MQTT tras volver a cargar.
+    _patch_happy_api(monkeypatch)
+    monkeypatch.setattr(MySairMQTTClient, "stop", lambda self: None)
+
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert hass.states.async_entity_ids("climate") == ["climate.salon"]
+    assert hass.services.has_service(DOMAIN, SERVICE_STOP_INSTALLATION)
+
+    # El coordinador/dispatcher se re-engancharon limpio tras el reload.
+    _fire_status(
+        hass,
+        "INST_A",
+        {"zone_id": "DEV_1", "is_on": True, "is_heat": True, "is_cool": False},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("climate.salon").state != "unavailable"
+
+
 # --- SERVICIO mysair.stop_installation (F5) ---
+
 
 async def test_stop_installation_service_calls_api(hass, monkeypatch):
     _patch_happy_api(monkeypatch)
@@ -189,7 +252,10 @@ async def test_stop_installation_service_unknown_installation_raises(hass, monke
 
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(
-            DOMAIN, SERVICE_STOP_INSTALLATION, {"installation_ref": "NO_EXISTE"}, blocking=True
+            DOMAIN,
+            SERVICE_STOP_INSTALLATION,
+            {"installation_ref": "NO_EXISTE"},
+            blocking=True,
         )
 
 
@@ -207,3 +273,107 @@ async def test_stop_installation_service_removed_after_last_unload(hass, monkeyp
     await hass.async_block_till_done()
 
     assert not hass.services.has_service(DOMAIN, SERVICE_STOP_INSTALLATION)
+
+
+# --- Varias instalaciones en una cuenta / cambio de topología (P3) ---
+
+
+async def test_setup_entry_multiple_installations(hass, monkeypatch):
+    # El código de descubrimiento (bucle sobre `installations`) y el filtro
+    # del coordinador por `ctl` ya estaban preparados para N>1 instalaciones;
+    # hasta ahora solo se probaba con una.
+    _patch_happy_api(monkeypatch)
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_installations",
+        lambda self, location_id: [{"reference": "INST_A"}, {"reference": "INST_B"}],
+    )
+
+    def _get_devices(self, ref):
+        if ref == "INST_A":
+            return [{"reference": "DEV_1", "name": "Salon"}]
+        return [{"reference": "DEV_2", "name": "Dormitorio"}]
+
+    monkeypatch.setattr(MySairAPI, "get_devices", _get_devices)
+
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    stored = hass.data[DOMAIN][entry.entry_id]
+    assert stored["installations"] == ["INST_A", "INST_B"]
+    assert stored["devices"] == {
+        "INST_A": [{"reference": "DEV_1", "name": "Salon"}],
+        "INST_B": [{"reference": "DEV_2", "name": "Dormitorio"}],
+    }
+    assert hass.states.get("climate.salon") is not None
+    assert hass.states.get("climate.dormitorio") is not None
+
+    # Un status de INST_B solo debe actualizar su propia zona.
+    _fire_status(
+        hass,
+        "INST_B",
+        {"zone_id": "DEV_2", "is_on": True, "is_heat": True, "is_cool": False},
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get("climate.dormitorio").state != "unavailable"
+    assert (
+        hass.states.get("climate.salon").state == "unavailable"
+    )  # sin status propio todavía
+
+
+async def test_topology_change_orphans_removed_zone_entity(hass, monkeypatch):
+    # No existe ninguna limpieza de entidades huérfanas (docs/testing-strategy.md
+    # lo documenta como pendiente, no como bug a corregir aquí): si una zona
+    # desaparece de get_devices() entre reinicios, su entidad se queda
+    # registrada mientras que la zona nueva sí se crea con normalidad. Este
+    # test fija el comportamiento actual tal cual es.
+    _patch_happy_api(monkeypatch)
+    monkeypatch.setattr(MySairMQTTClient, "stop", lambda self: None)
+
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    _fire_status(
+        hass,
+        "INST_A",
+        {"zone_id": "DEV_1", "is_on": True, "is_heat": True, "is_cool": False},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("climate.salon").state != "unavailable"
+
+    registry = er.async_get(hass)
+    old_entity_id = registry.async_get_entity_id(
+        "climate", DOMAIN, "mysair_INST_A_DEV_1"
+    )
+    assert old_entity_id == "climate.salon"
+
+    # Cambio de topología: DEV_1 desaparece, aparece DEV_2 nueva.
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_devices",
+        lambda self, ref: [{"reference": "DEV_2", "name": "Dormitorio"}],
+    )
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # La zona nueva se crea y funciona con normalidad.
+    assert hass.states.get("climate.dormitorio") is not None
+    _fire_status(
+        hass,
+        "INST_A",
+        {"zone_id": "DEV_2", "is_on": True, "is_heat": True, "is_cool": False},
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("climate.dormitorio").state != "unavailable"
+
+    # La entidad de la zona eliminada sigue registrada (huérfana): HA no
+    # borra automáticamente entidades que la integración deja de crear.
+    assert (
+        registry.async_get_entity_id("climate", DOMAIN, "mysair_INST_A_DEV_1")
+        == old_entity_id
+    )

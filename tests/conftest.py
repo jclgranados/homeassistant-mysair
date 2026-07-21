@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "custom_components", "mysair"))
 # (ver homeassistant.loader._get_custom_components).
 sys.path.insert(0, _REPO_ROOT)
 
-import pytest
+import pytest  # noqa: E402 (deliberado: necesita sys.path ya modificado, ver arriba)
 
 try:
     import pytest_homeassistant_custom_component  # noqa: F401
@@ -106,6 +106,7 @@ def fake_session():
 
 
 # --- Payloads sanitizados (solo campos que el código realmente consume) ---
+
 
 @pytest.fixture
 def login_ok():

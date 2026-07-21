@@ -41,7 +41,9 @@ def test_build_mqtt_connect_structure():
 
 def test_build_mqtt_connect_remaining_length():
     pkt = build_mqtt_connect("a", "b", "c")
-    remaining = encode_varint(len(pkt) - 2)  # total menos el fixed header (0x10 + 1 byte len)
+    remaining = encode_varint(
+        len(pkt) - 2
+    )  # total menos el fixed header (0x10 + 1 byte len)
     assert pkt[1:2] == remaining
 
 

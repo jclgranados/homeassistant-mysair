@@ -3,7 +3,6 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .api import MySairAPI, MySairAuthError, MySairConnectionError
@@ -39,10 +38,14 @@ class MySairConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Ejecuta el login de forma segura en un hilo (sin bloquear el bucle principal)
                 await self.hass.async_add_executor_job(api.login)
             except MySairAuthError:
-                _LOGGER.error("[MySair ConfigFlow] ❌ Login fallido: credenciales inválidas.")
+                _LOGGER.error(
+                    "[MySair ConfigFlow] ❌ Login fallido: credenciales inválidas."
+                )
                 errors["base"] = "invalid_auth"
             except MySairConnectionError as e:
-                _LOGGER.error(f"[MySair ConfigFlow] ❌ Error conectando con MySair API: {e}")
+                _LOGGER.error(
+                    f"[MySair ConfigFlow] ❌ Error conectando con MySair API: {e}"
+                )
                 errors["base"] = "cannot_connect"
             except Exception as e:
                 _LOGGER.exception(f"[MySair ConfigFlow] ❌ Error inesperado: {e}")
@@ -89,15 +92,23 @@ class MySairConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except MySairAuthError:
                 errors["base"] = "invalid_auth"
             except MySairConnectionError as e:
-                _LOGGER.error(f"[MySair ConfigFlow] ❌ Error conectando con MySair API: {e}")
+                _LOGGER.error(
+                    f"[MySair ConfigFlow] ❌ Error conectando con MySair API: {e}"
+                )
                 errors["base"] = "cannot_connect"
             except Exception as e:
-                _LOGGER.exception(f"[MySair ConfigFlow] ❌ Error inesperado en reauth: {e}")
+                _LOGGER.exception(
+                    f"[MySair ConfigFlow] ❌ Error inesperado en reauth: {e}"
+                )
                 errors["base"] = "unknown"
             else:
                 return self.async_update_reload_and_abort(
                     reauth_entry,
-                    data={**reauth_entry.data, "email": email, "refresh_token": api.refresh_token_value},
+                    data={
+                        **reauth_entry.data,
+                        "email": email,
+                        "refresh_token": api.refresh_token_value,
+                    },
                     reason="reauth_successful",
                 )
 
