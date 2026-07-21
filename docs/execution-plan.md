@@ -36,7 +36,7 @@
 | 26 | Robustez del protocolo: frames parciales/multi-paquete (E2), validación de payloads (E4), evaluación de `paho-mqtt` (E6) | `mqtt_handler.py`, `status_parser.py`, `__init__.py` | 🟡 Media | ✅ Hecho |
 | 27 | Fase F: limpieza modo auto (F3), control de suelo radiante (F4), decisión F6 | `const.py`, `status_parser.py`, `switch.py` | 🟢 Baja | ✅ Hecho |
 | 28 | Atributo `medio` (AC/suelo/mixto) en `sensor.<zona>_modo` | `sensor.py` | 🟢 Baja | ✅ Hecho |
-| 29 | Icono de marca (G4) y reintento de `quality_scale: silver` | `custom_components/mysair/brand/` (nuevo), `manifest.json` | 🟢 Baja | 🟡 Pendiente de confirmar `quality_scale` en CI |
+| 29 | Icono de marca (G4) y reintento de `quality_scale: silver` | `custom_components/mysair/brand/` (nuevo), `manifest.json` | 🟢 Baja | ✅ Hecho (confirmado en CI, PR #34) |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -249,7 +249,7 @@
 - **Ficheros generados** (`custom_components/mysair/brand/`), procesados a partir del logo original con Pillow, siguiendo las especificaciones de imagen del propio README de `home-assistant/brands` (aplicables también al mecanismo local):
   - `icon.png` (256×256) / `icon@2x.png` (512×512): recorte cuadrado solo del símbolo de puntos (sin el logotipo de texto), con relleno transparente para forzar la relación de aspecto 1:1 exigida — el símbolo en sí no es cuadrado (625×458 tras recortar el espacio vacío).
   - `logo.png` (1514×229) / `logo@2x.png` (3027×458, sin reescalar): logotipo completo (símbolo + "MYSair"), recortando el eslogan "sistema de zonas y difusión" que aparecía debajo (no es parte de la marca/logotipo en sí). Alturas elegidas para no necesitar ningún escalado al alza en la versión hDPI (458 ya cae dentro del rango 256-512 exigido).
-- `manifest.json`: `quality_scale: "silver"` añadido de nuevo (orden alfabético de claves, entre `loggers` y `requirements`) — **pendiente de confirmar en CI** si `hassfest` lo acepta para una integración custom (ya rechazó la clave `homeassistant` en el pasado por motivo similar, Tarea 12).
+- `manifest.json`: `quality_scale: "silver"` añadido de nuevo (orden alfabético de claves, entre `loggers` y `requirements`) — **confirmado en CI** (PR #34, job `hassfest` en verde): a diferencia de la clave `homeassistant` (rechazada en su momento, Tarea 12), `quality_scale` sí es válida para una integración custom.
 - Sin tests nuevos (ficheros de imagen estáticos, sin lógica). Verificación: `python3 -m json.tool` sobre `manifest.json` (válido) + suite P0/P1 sin cambios (157 tests verdes).
 - **Deliberadamente no se ha hecho todavía:** un PR a `home-assistant/brands` (el mecanismo legacy) para dar cobertura a usuarios en versiones de HA anteriores a 2026.3.0 — es una contribución pública a un repositorio externo, se deja como decisión pendiente con el usuario tras ver si el mecanismo local + `quality_scale` ya son suficientes.
 
