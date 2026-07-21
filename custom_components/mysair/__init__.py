@@ -105,6 +105,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             # Si el mensaje es de tipo "status", lo parseamos
             if topic.endswith("/status"):
                 parsed_data = parse_status_payload(payload)
+                # E4: un payload que no es ni siquiera un dict se rechaza
+                # (parse_status_payload devuelve None) — no se dispara el
+                # evento en vez de propagar un valor vacío sin sentido.
+                if parsed_data is None:
+                    _LOGGER.warning(f"[MySair MQTT] ⛔ Payload de status rechazado (forma inesperada): {topic}")
+                    return
                 hass.loop.call_soon_threadsafe(
                     hass.bus.async_fire,
                     f"{DOMAIN}_update",
@@ -116,6 +122,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             # docs/protocol-findings.md §8). Evento propio, no mysair_update.
             elif topic.endswith("/feedback"):
                 feedback = parse_feedback_payload(payload)
+                if feedback is None:
+                    _LOGGER.warning(f"[MySair MQTT] ⛔ Payload de feedback rechazado (forma inesperada): {topic}")
+                    return
                 _LOGGER.debug(
                     f"[MySair MQTT] ✅ Confirmación recibida: orderId={feedback['order_id']} "
                     f"ctl={feedback['ctl']}"

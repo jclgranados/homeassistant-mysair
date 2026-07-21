@@ -62,11 +62,11 @@
 | # | Tarea | Prio |
 |---|---|---|
 | E1 | Parser MQTT robusto: decodificar la cabecera MQTT real (longitud de topic, packet id) en vez de `split`/`{...}`. | ✅ Hecho (`known-unknowns` #6 resuelto) — usado como método primario con fallback a la heurística anterior si no es concluyente. |
-| E2 | Manejo de frames parciales / múltiples paquetes por frame WS. | 🟡 |
+| E2 | Manejo de frames parciales / múltiples paquetes por frame WS. | ✅ Hecho (2026-07-21) — `mqtt_handler.py`: `self._recv_buffer` acumula bytes entre llamadas a `_on_message`; `_next_packet_length` distingue incompleto de malformado usando la longitud declarada por MQTT; el heurístico de texto de respaldo sigue intacto para tramas que no encajan en el framing estándar. |
 | E3 | Backoff exponencial con jitter en reconexión (hoy fijo 10 s). | ✅ Hecho — `compute_backoff_delay` (base 10 s, tope 120 s, jitter ±20%); se resetea el contador de intentos al reconectar (CONNACK) y los reconectes planificados (refresco de credenciales) siguen sin espera. |
-| E4 | Validación de esquema de payloads (rechazar/loguear los inesperados). | 🟡 |
+| E4 | Validación de esquema de payloads (rechazar/loguear los inesperados). | ✅ Hecho (2026-07-21) — `status_parser.py` rechaza (`None`) un payload que no es un dict; loguea (antes en silencio) `ctl` ausente, campo `t` con forma inesperada y zonas sin `rf`. Sin librería nueva (`voluptuous` no está disponible en el entorno de tests P0/P1); permisivo ante claves adicionales desconocidas. |
 | E5 | Evaluar `client_id` propio distinto del de la app oficial para evitar expulsiones (`known-unknowns` #20). | ✅ Hecho |
-| E6 | Evaluar migrar a `paho-mqtt` sobre WebSocket con SigV4, reduciendo código artesanal. Nota: se eliminó de `requirements` en A4 por no usarse; volver a añadirlo si se retoma esta tarea. | 🟡 |
+| E6 | Evaluar migrar a `paho-mqtt` sobre WebSocket con SigV4, reduciendo código artesanal. | ✅ Evaluado (2026-07-21) — **decisión: no migrar.** `paho-mqtt` no soporta de forma nativa una URL WSS firmada con SigV4 que hay que re-firmar antes de cada reconexión (la necesidad real detrás de las Tareas 8/20); migrar solo sustituiría ~150-200 líneas de framing MQTT de bajo nivel (varint, `parse_mqtt_publish`, etc.) mientras se reescribe el resto del pegamento (refresco proactivo de credenciales, backoff E3, observabilidad D3/D4) a mano igual. El coste de re-validar en producción el comportamiento de reconexión ya depurado no compensa el ahorro de código. Se eliminó de `requirements` en A4 por no usarse; no se reintroduce. |
 | E7 | Reconciliación de estado optimista con timeout (revertir si no llega confirmación MQTT). | ✅ Hecho — suscripción a `feedback`, correlación por `orderId`, y revert del estado optimista (temperatura/modo/fan_mode/switch) si no llega confirmación a tiempo; se descarta si llega un status real antes. |
 
 ---
@@ -100,4 +100,4 @@
 
 ~~A1 → A2 → A4 → A3 (estabilizar y limpiar) → A5/A6/A7 (requiere validación de protocolo) → B1–B3 (red de seguridad de tests)~~ — Fases A y B completas. `docs/known-unknowns.md` #6 (formato de frame MQTT, bloqueaba E1/E2) ya está resuelto — ninguna fila de esa tabla sigue marcada con riesgo 🔴 a día de hoy.
 
-**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), G completas. Quedan: E2, E4, E6 (robustez); F3, F4, F6.
+**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), G y E (E1-E6) completas — E6 resuelta como decisión documentada de no migrar, no como implementación. Quedan: F3, F4, F6.

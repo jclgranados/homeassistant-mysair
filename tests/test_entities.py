@@ -158,6 +158,22 @@ async def test_event_from_other_installation_is_ignored(hass, monkeypatch):
     assert hass.states.get("climate.salon").state == before
 
 
+async def test_malformed_status_payload_does_not_fire_update_event(hass, monkeypatch):
+    # E4: mqtt_message_callback (__init__.py) rechaza (no dispara
+    # mysair_update) cuando parse_status_payload devuelve None por recibir
+    # un payload que no es ni siquiera un dict.
+    entry = await _setup_entry(hass, monkeypatch)
+    mqtt_client = hass.data[DOMAIN][entry.entry_id]["mqtt"]
+
+    events = []
+    hass.bus.async_listen(f"{DOMAIN}_update", events.append)
+
+    mqtt_client.message_callback({"topic": "pro/v1/get/ctl/INST_A/status", "payload": "not-a-dict"})
+    await hass.async_block_till_done()
+
+    assert events == []
+
+
 async def test_climate_set_hvac_mode_sends_command(hass, monkeypatch):
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)

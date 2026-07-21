@@ -163,7 +163,7 @@ Estructura normalizada que emite `parse_status_payload` al event bus como `mysai
 | Sesión limpia | CleanSession=1 → sin cola offline; los mensajes perdidos durante la desconexión **no se recuperan** (se compensa con el refresco periódico) | Confirmado |
 | Deduplicación | Ninguna. Cada `status` reescribe el estado; las entidades comparan valor antes de escribir (`sensor.py:84`) | Confirmado |
 | Orden de mensajes | QoS 0, sin garantía de orden; un `status` viejo podría sobrescribir uno nuevo | Inferido ⚠️ |
-| Frames parciales/multi-PUBLISH | No se gestionan: se asume 1 frame WS = 1 paquete MQTT completo con 1 JSON | Confirmado ⚠️ |
+| Frames parciales/multi-PUBLISH | ✅ **Resuelto (E2, 2026-07-21):** `_recv_buffer` acumula bytes entre llamadas y drena en bucle tantos paquetes completos como haya, distinguiendo "incompleto" (esperar más bytes) de "malformado" (varint de longitud nunca válido) | Confirmado |
 | PINGREQ/PINGRESP MQTT | No se envían; se confía en el ping del WebSocket | Confirmado |
 | Client ID compartido | Igual que el `aws_mqtt_user` que usa la app web → posible expulsión mutua si ambos conectan | Hipótesis ⚠️ |
 
@@ -171,7 +171,7 @@ Estructura normalizada que emite `parse_status_payload` al event bus como `mysai
 1. Estado optimista de una entidad vs `status` en vuelo → parpadeo de estado. (Abierto, bajo impacto.)
 2. ~~Reconexión que reutiliza firma caducada → desconexión indefinida.~~ ✅ **Mitigado (#22):** `aws_credentials_expired()` refresca según `aws_expires_at`.
 3. ~~`client_id` compartido con la app oficial → desconexiones mutuas.~~ ✅ **Mitigado (#20):** `client_id` único por conexión.
-4. Frames parciales / bytes del frame (#6): el parser sigue siendo frágil (`split`/`{...}`). (Abierto, robustez.)
+4. ~~Frames parciales / bytes del frame (#6)~~ ✅ **Resuelto (E2):** reensamblado por longitud (`_recv_buffer`/`_next_packet_length`), con el heurístico `split`/`{...}` reservado como respaldo cuando la trama no encaja en el framing MQTT estándar.
 
 ---
 
