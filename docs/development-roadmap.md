@@ -35,7 +35,7 @@
 
 | # | Tarea | Prio |
 |---|---|---|
-| C1 | Introducir un **almacén central / coordinador** de estado por zona en vez del fan-out por event bus. | 🟡 |
+| C1 | Introducir un **almacén central / coordinador** de estado por zona en vez del fan-out por event bus. | ✅ Hecho (2026-07-21) — `coordinator.py`: `MySairCoordinator` escucha `mysair_update` una sola vez por config entry y redistribuye cada zona por separado vía `homeassistant.helpers.dispatcher`; las 6 entidades por zona ya no repiten el filtrado de topic/ctl/zone_id. Sin cambio de comportamiento observable. |
 | C2 | Añadir `unique_id` a la config entry (`async_set_unique_id`) para evitar duplicados. | ✅ Hecho |
 | C3 | **Reauth flow** (`async_step_reauth`) y uso de `ConfigEntryAuthFailed`/`ConfigEntryNotReady`. | ✅ Hecho |
 | C4 | `translations/` + `strings.json` (config flow, servicios). | ✅ Hecho — `strings.json` (inglés, referencia/fallback) + `translations/es.json`; cubre pasos del config flow (`user`/`reauth_confirm`), errores, abort reasons y el servicio `mysair.stop_installation`. **Alcance deliberado:** no incluye nombres de entidad (`climate`/`sensor`/`switch` siguen con nombres hardcodeados en español) — eso requeriría migrar a `has_entity_name`/`translation_key`, un cambio de mayor alcance que cambiaría el nombre visible de entidades ya instaladas; queda fuera de esta tarea. |
@@ -100,4 +100,4 @@
 
 ~~A1 → A2 → A4 → A3 (estabilizar y limpiar) → A5/A6/A7 (requiere validación de protocolo) → B1–B3 (red de seguridad de tests)~~ — Fases A y B completas. `docs/known-unknowns.md` #6 (formato de frame MQTT, bloqueaba E1/E2) ya está resuelto — ninguna fila de esa tabla sigue marcada con riesgo 🔴 a día de hoy.
 
-**Estado real (2026-07-20):** Fases A, B, C2/C3/C4/C5/C6/C7/C8, G completas. Quedan: C1 (modernización mayor); D2-D4 (observabilidad); E2, E4, E6 (robustez); F3, F6.
+**Estado real (2026-07-21):** Fases A, B, C1/C2/C3/C4/C5/C6/C7/C8, G completas. Quedan: D2-D4 (observabilidad); E2, E4, E6 (robustez); F3, F4, F6.

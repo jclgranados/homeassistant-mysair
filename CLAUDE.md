@@ -21,15 +21,20 @@ Dominio HA: `mysair`. Tipo: `hub`. `iot_class`: `cloud_push` (híbrido: push MQT
 config_flow.py ──login──► api.py (MySairAPI, HTTP síncrono con requests)
 __init__.py (async_setup_entry):
    login → get_locations → get_installations → get_devices
-   → hass.data[DOMAIN][entry_id] = {api, devices, installations, mqtt}
+   → hass.data[DOMAIN][entry_id] = {api, devices, installations, mqtt, coordinator}
    → MySairMQTTClient.start()  (hilo daemon, WSS a AWS IoT)
+   → MySairCoordinator.start()  (coordinator.py, C1: único suscriptor del bus por entry)
    → forward a plataformas: climate, sensor, switch
    → refresh_status_periodic()  (task, POST status cada 60 s)
 
 MQTT (mqtt_handler.py) recibe .../status
    → mqtt_message_callback (en __init__.py) parsea t[] → zonas
    → hass.bus.async_fire("mysair_update", {topic, data})
-   → cada entidad escucha, filtra por ctl+zone_id, actualiza estado
+   → MySairCoordinator (único suscriptor por config entry, C1) filtra por
+     instalación propia y redistribuye cada zona por separado vía
+     homeassistant.helpers.dispatcher (signal_zone_update(ctl, zone_id))
+   → cada entidad se suscribe solo a la señal de su propia zona, ya sin
+     filtrar ctl/zone_id, y actualiza estado
 
 Comando de entidad → api.send_zone_command → POST /send/instruction (devuelve orderId)
    → backend reenvía al dispositivo → estado vuelve por MQTT (reconciliación)
@@ -55,7 +60,7 @@ pytest                      # 126 tests: parser, builders MQTT, firma SigV4, cli
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 180 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics)
+docker compose run --rm test-ha    # 180+ tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona)
 
 # Lint / formato (recomendado: ruff; aún no configurado en el repo)
 ruff check custom_components/mysair tests
@@ -86,6 +91,7 @@ Los tests y la documentación están en la raíz del repo.
 | `api.py` | `MySairAPI`: HTTP síncrono (`requests`, `session` inyectable) + firma AWS SigV4 |
 | `status_parser.py` | Parsers **puros** de `status` (`parse_status_payload`) y `feedback` (`parse_feedback_payload`), sin dependencia de HA |
 | `mqtt_handler.py` | `MySairMQTTClient`: MQTT crudo sobre WebSocket (`websocket-client`) |
+| `coordinator.py` | `MySairCoordinator` (C1): único suscriptor de `mysair_update` por config entry; filtra y redistribuye cada zona por separado vía `homeassistant.helpers.dispatcher` |
 | `command_feedback.py` | `CommandFeedbackMixin`: correlación de comandos con el ACK de `mysair_feedback` (climate/switch) |
 | `availability.py` | `AvailabilityMixin`: `should_poll=False` + `available` según frescura del último status MQTT (todas las entidades) |
 | `climate.py` | `MySairThermostat` (ClimateEntity) |
@@ -242,6 +248,7 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **D1 (diagnostics.py):** volcado descargable desde la UI de HA con instalaciones, devices y estado del cliente MQTT, redactando tokens/credenciales AWS. Ver Tarea 22.
 - ✅ **F5 (servicio `mysair.stop_installation`):** detiene una instalación completa con un comando en vez de apagar zona por zona; registrado una vez por dominio y retirado al descargar la última entrada. Ver Tarea 22.
 - ✅ **C4 (traducciones):** `strings.json` (inglés, referencia/fallback) + `translations/es.json` para el config flow (pasos, errores, abort) y el servicio `mysair.stop_installation`. Alcance deliberado: no incluye nombres de entidad (`climate`/`sensor`/`switch` siguen hardcodeados en español) — migrarlos a `has_entity_name`/`translation_key` cambiaría el nombre visible de entidades ya instaladas, se descartó por el riesgo frente al valor. Ver Tarea 23.
+- ✅ **C1 (coordinador central de estado por zona):** `coordinator.py` nuevo — `MySairCoordinator`, una instancia por config entry, sustituye las 6 suscripciones directas al bus (una por entidad de zona: climate/sensor×4/switch) que repetían el mismo filtrado de topic/ctl/zone_id. Ahora un único suscriptor por entry filtra una vez y redistribuye cada zona por separado vía `homeassistant.helpers.dispatcher`. `mqtt_message_callback` y `command_feedback.py` no se tocan; sin cambio de comportamiento observable (versión `2.7.0`→`2.7.1`, `PATCH`). Ver Tarea 24.
 
 Pendientes:
 - 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente; los duplicados de `feedback` vistos en producción encajan aquí).

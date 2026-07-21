@@ -3,9 +3,11 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import UnitOfTemperature, PERCENTAGE
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .availability import AvailabilityMixin
 from .const import DOMAIN
+from .coordinator import signal_zone_update
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,7 +66,9 @@ class MySairTempSensor(AvailabilityMixin, SensorEntity):
         return self._state
 
     async def async_added_to_hass(self):
-        self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+        self._unsub = async_dispatcher_connect(
+            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+        )
 
     async def async_will_remove_from_hass(self):
         if self._unsub:
@@ -73,23 +77,13 @@ class MySairTempSensor(AvailabilityMixin, SensorEntity):
         self._stop_availability()
 
     @callback
-    def _handle_mqtt_update(self, event):
-        topic = event.data.get("topic", "")
-        data = event.data.get("data", {})
-        if not topic.endswith("/status"):
-            return
-        ctl = data.get("ctl")
-        if ctl != self.inst_ref:
-            return
-        for zone in data.get("zones", []):
-            if zone.get("zone_id") != self.device_id:
-                continue
-            self._mark_status_received()
-            new_val = zone.get("temp_actual")
-            if new_val != self._state:
-                self._state = new_val
-                _LOGGER.debug(f"[MySair Sensor] 🌡️ {self._attr_name}: {new_val}°C")
-            self.async_write_ha_state()
+    def _handle_zone_update(self, zone):
+        self._mark_status_received()
+        new_val = zone.get("temp_actual")
+        if new_val != self._state:
+            self._state = new_val
+            _LOGGER.debug(f"[MySair Sensor] 🌡️ {self._attr_name}: {new_val}°C")
+        self.async_write_ha_state()
 
 
 # ==========================================================
@@ -127,7 +121,9 @@ class MySairSetpointSensor(AvailabilityMixin, SensorEntity):
         return self._state
 
     async def async_added_to_hass(self):
-        self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+        self._unsub = async_dispatcher_connect(
+            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+        )
 
     async def async_will_remove_from_hass(self):
         if self._unsub:
@@ -136,23 +132,13 @@ class MySairSetpointSensor(AvailabilityMixin, SensorEntity):
         self._stop_availability()
 
     @callback
-    def _handle_mqtt_update(self, event):
-        topic = event.data.get("topic", "")
-        data = event.data.get("data", {})
-        if not topic.endswith("/status"):
-            return
-        ctl = data.get("ctl")
-        if ctl != self.inst_ref:
-            return
-        for zone in data.get("zones", []):
-            if zone.get("zone_id") != self.device_id:
-                continue
-            self._mark_status_received()
-            new_val = zone.get("temp_target")
-            if new_val != self._state:
-                self._state = new_val
-                _LOGGER.debug(f"[MySair Sensor] 🎯 {self._attr_name}: {new_val}°C")
-            self.async_write_ha_state()
+    def _handle_zone_update(self, zone):
+        self._mark_status_received()
+        new_val = zone.get("temp_target")
+        if new_val != self._state:
+            self._state = new_val
+            _LOGGER.debug(f"[MySair Sensor] 🎯 {self._attr_name}: {new_val}°C")
+        self.async_write_ha_state()
 
 
 # ==========================================================
@@ -188,7 +174,9 @@ class MySairModeSensor(AvailabilityMixin, SensorEntity):
         return self._state
 
     async def async_added_to_hass(self):
-        self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+        self._unsub = async_dispatcher_connect(
+            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+        )
 
     async def async_will_remove_from_hass(self):
         if self._unsub:
@@ -197,31 +185,21 @@ class MySairModeSensor(AvailabilityMixin, SensorEntity):
         self._stop_availability()
 
     @callback
-    def _handle_mqtt_update(self, event):
-        topic = event.data.get("topic", "")
-        data = event.data.get("data", {})
-        if not topic.endswith("/status"):
-            return
-        ctl = data.get("ctl")
-        if ctl != self.inst_ref:
-            return
-        for zone in data.get("zones", []):
-            if zone.get("zone_id") != self.device_id:
-                continue
-            self._mark_status_received()
-            # 'e' = encendido; calor/frío = paridad de 'm'. Ver docs/protocol-findings.md.
-            new_state = "OFF"
-            if zone.get("is_on"):
-                if zone.get("is_cool"):
-                    new_state = "COOL"
-                elif zone.get("is_heat"):
-                    new_state = "HEAT"
-                else:
-                    new_state = "ON"
-            if new_state != self._state:
-                self._state = new_state
-                _LOGGER.debug(f"[MySair Sensor] 🔄 {self._attr_name}: {self._state}")
-            self.async_write_ha_state()
+    def _handle_zone_update(self, zone):
+        self._mark_status_received()
+        # 'e' = encendido; calor/frío = paridad de 'm'. Ver docs/protocol-findings.md.
+        new_state = "OFF"
+        if zone.get("is_on"):
+            if zone.get("is_cool"):
+                new_state = "COOL"
+            elif zone.get("is_heat"):
+                new_state = "HEAT"
+            else:
+                new_state = "ON"
+        if new_state != self._state:
+            self._state = new_state
+            _LOGGER.debug(f"[MySair Sensor] 🔄 {self._attr_name}: {self._state}")
+        self.async_write_ha_state()
 
 
 # ==========================================================
@@ -259,7 +237,9 @@ class MySairHumiditySensor(AvailabilityMixin, SensorEntity):
         return self._state
 
     async def async_added_to_hass(self):
-        self._unsub = self.hass.bus.async_listen(f"{DOMAIN}_update", self._handle_mqtt_update)
+        self._unsub = async_dispatcher_connect(
+            self.hass, signal_zone_update(self.inst_ref, self.device_id), self._handle_zone_update
+        )
 
     async def async_will_remove_from_hass(self):
         if self._unsub:
@@ -268,21 +248,11 @@ class MySairHumiditySensor(AvailabilityMixin, SensorEntity):
         self._stop_availability()
 
     @callback
-    def _handle_mqtt_update(self, event):
-        topic = event.data.get("topic", "")
-        data = event.data.get("data", {})
-        if not topic.endswith("/status"):
-            return
-        ctl = data.get("ctl")
-        if ctl != self.inst_ref:
-            return
-        for zone in data.get("zones", []):
-            if zone.get("zone_id") != self.device_id:
-                continue
-            self._mark_status_received()
-            new_val = zone.get("humidity")
-            if new_val != self._state:
-                self._state = new_val
-                _LOGGER.debug(f"[MySair Sensor] 💧 {self._attr_name}: {new_val}%")
-            self.async_write_ha_state()
+    def _handle_zone_update(self, zone):
+        self._mark_status_received()
+        new_val = zone.get("humidity")
+        if new_val != self._state:
+            self._state = new_val
+            _LOGGER.debug(f"[MySair Sensor] 💧 {self._attr_name}: {new_val}%")
+        self.async_write_ha_state()
 
