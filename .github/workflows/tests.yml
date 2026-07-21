@@ -31,3 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: home-assistant/actions/hassfest@master
+
+  ruff:
+    name: ruff (lint + formato)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-lint.txt
+      - run: ruff check custom_components/mysair tests
+      - run: ruff format --check custom_components/mysair tests

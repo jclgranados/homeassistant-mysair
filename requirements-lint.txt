@@ -1,0 +1,2 @@
+# Dependencia de lint/formato (ver pyproject.toml para la configuración).
+ruff==0.15.22
