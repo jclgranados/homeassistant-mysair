@@ -35,6 +35,7 @@
 | 25 | Observabilidad: redacción/niveles de logs (D2), sensor de conexión MQTT + métricas (D3/D4) | `api.py`, `mqtt_handler.py`, `sensor.py`, `diagnostics.py` | 🟡 Media | ✅ Hecho |
 | 26 | Robustez del protocolo: frames parciales/multi-paquete (E2), validación de payloads (E4), evaluación de `paho-mqtt` (E6) | `mqtt_handler.py`, `status_parser.py`, `__init__.py` | 🟡 Media | ✅ Hecho |
 | 27 | Fase F: limpieza modo auto (F3), control de suelo radiante (F4), decisión F6 | `const.py`, `status_parser.py`, `switch.py` | 🟢 Baja | ✅ Hecho |
+| 28 | Atributo `medio` (AC/suelo/mixto) en `sensor.<zona>_modo` | `sensor.py` | 🟢 Baja | ✅ Hecho |
 
 > Nota: A1 y A2 se ejecutan juntas porque el cierre limpio del unload depende de poder cancelar la tarea periódica.
 > A5 quedó **desbloqueada** al analizar el bundle oficial de la app (`docs/protocol-findings.md`): `e`=encendido, `m`=modo (par=calor, impar=frío). Credenciales (A6/A7) siguen pendientes de `docs/known-unknowns.md` #22.
@@ -234,6 +235,12 @@
 - **F6:** evaluado y **descartado por decisión de alcance** (confirmado con el usuario) — solo el nombre de los comandos (`temporizer`, `programs`) está confirmado en el bundle; la forma del payload para *fijar* un temporizador o programa nunca se decodificó, y no existe ni un `setPrograms` de escritura. Implementarlo exigiría inventar campos, contra la regla del proyecto. Documentado como `known-unknowns.md` #27 (mismo patrón que #15, multi-location). Sin cambios de código.
 - Tests: 3 nuevos en `test_status_parser.py` (`compute_mode_value` contra la tabla confirmada, roundtrip con `parse_mode`, caso límite "ningún medio activo" fuerza AC); 4 nuevos en `test_entities.py` (`MySairFloorSwitch`: no disponible sin capacidad, disponible y refleja estado con capacidad, `turn_on`/`turn_off` preservan calor/frío/AC al recalcular `m`). 221 tests verdes en Docker (P0-P2).
 - `manifest.json`: `2.9.0` → `2.10.0` (`MINOR`: nueva entidad retrocompatible).
+
+### Tarea 28 — Atributo `medio` (AC/suelo/mixto) en `sensor.<zona>_modo`
+- **Motivación:** tras F4, no había forma directa de saber desde HA si una zona es AC-solo, suelo-solo o mixta sin combinar manualmente la disponibilidad/estado de `switch.<zona>_suelo` con `climate.<zona>`. Se añade un resumen en un solo valor.
+- `sensor.py` → `MySairModeSensor`: nuevo atributo `medio` (`"ac"`/`"suelo"`/`"mixto"`/`None`), calculado en `_handle_zone_update` a partir de `is_ac`/`is_floor` (derivados de `m`, ya parseados por `status_parser.py`). Se conserva aunque la zona esté apagada, ya que `m` no cambia al apagar (`e` es independiente de `m`).
+- Tests: 5 nuevos en `test_entities.py` (parametrizado AC/suelo/mixto/ninguno, y que el atributo persiste con la zona apagada). 226 tests verdes en Docker (P0-P2).
+- `manifest.json`: `2.10.1` → `2.10.2` (`MINOR`: atributo nuevo retrocompatible — nota: aunque es un cambio pequeño, añade información nueva, no corrige un bug, así que no es `PATCH`).
 
 ### Pendiente (no bloqueado, siguiente)
 - Traducción de nombres de entidad (`has_entity_name`/`translation_key`) — ampliación futura de C4, descartada en la Tarea 23 por cambiar nombres visibles de entidades ya instaladas.

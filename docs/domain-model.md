@@ -123,7 +123,7 @@ classDiagram
 
 | Concepto | Campo | Estado en la integración |
 |---|---|---|
-| Suelo radiante vs AC | `m` ({2,3,4,5}=suelo) + capacidad `s` + `sv` (encendido/apagado) | ✅ **Implementado (F4, 2026-07-21):** `switch.py` → `MySairFloorSwitch`, reutiliza el comando `mode` recalculando `m` (`compute_mode_value`) |
+| Suelo radiante vs AC | `m` ({2,3,4,5}=suelo) + capacidad `s` + `sv` (encendido/apagado) | ✅ **Implementado (F4, 2026-07-21):** `switch.py` → `MySairFloorSwitch`, reutiliza el comando `mode` recalculando `m` (`compute_mode_value`). Resumen de qué medio está activo (`ac`/`suelo`/`mixto`, se conserva apagado) expuesto como atributo `medio` de `sensor.<zona>_modo` (2026-07-21). |
 | Velocidad del ventilador | `vv` + capacidad `v` + comando `fanspeed` | ✅ Implementado (F2) |
 | Humedad | `hum` (fallback `hm`) | ✅ Implementado (F1) |
 | Standby | `e=="2"` | ✅ Mapeado a `HVACAction.IDLE` |
