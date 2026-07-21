@@ -96,7 +96,7 @@ Los tests y la documentación están en la raíz del repo.
 | `availability.py` | `AvailabilityMixin`: `should_poll=False` + `available` según frescura del último status MQTT (todas las entidades) |
 | `climate.py` | `MySairThermostat` (ClimateEntity) |
 | `sensor.py` | 4 sensores por zona (temp actual, consigna, modo, humedad) + `MySairMqttStatusSensor` (D3/D4): 1 por config entry, estado online/offline y métricas de reconexión/parseo |
-| `switch.py` | `MySairSwitch` (power on/off) |
+| `switch.py` | `MySairSwitch` (power on/off) + `MySairFloorSwitch` (suelo radiante on/off, F4) |
 | `config_flow.py` | Config flow (email + password) |
 | `const.py` | Constantes (algunas sin uso: `HVAC_MODES` con `auto`, `SCAN_INTERVAL`) |
 | `diagnostics.py` | Volcado de diagnóstico descargable desde la UI de HA, redactando credenciales/tokens (D1) |
@@ -251,6 +251,11 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **C1 (coordinador central de estado por zona):** `coordinator.py` nuevo — `MySairCoordinator`, una instancia por config entry, sustituye las 6 suscripciones directas al bus (una por entidad de zona: climate/sensor×4/switch) que repetían el mismo filtrado de topic/ctl/zone_id. Ahora un único suscriptor por entry filtra una vez y redistribuye cada zona por separado vía `homeassistant.helpers.dispatcher`. `mqtt_message_callback` y `command_feedback.py` no se tocan; sin cambio de comportamiento observable (versión `2.7.0`→`2.7.1`, `PATCH`). Ver Tarea 24.
 - ✅ **D2 (redacción de logs y niveles):** `api.py` trunca los cuerpos de respuesta HTTP de error antes de loguearlos (`_truncate`); `mqtt_handler.py` enmascara el `aws_access_key_id` embebido en el `client_id` MQTT (`_redact_client_id`). Logs de alta frecuencia (mensaje MQTT recibido, comandos/instrucciones enviados, confirmaciones de feedback, acciones de usuario) bajados de INFO a DEBUG; se mantienen en INFO los eventos de ciclo de vida. Ver Tarea 25.
 - ✅ **D3+D4 (sensor de conexión MQTT + métricas):** `MySairMqttStatusSensor` (`sensor.py`), una entidad por config entry (no por zona): estado online/offline (`mqtt_client.connected`) y, como atributos, última actualización recibida, intentos/total de reconexiones, y contadores de mensajes decodificados por el método estricto/heurístico/fallidos. Mismas métricas añadidas a `diagnostics.py`. Versión `2.7.1`→`2.8.0` (`MINOR`). Ver Tarea 25.
+- ✅ **E2 (frames parciales/multi-paquete):** `mqtt_handler.py` ya no asume 1 mensaje WS = 1 paquete MQTT completo. `self._recv_buffer` + `_next_packet_length` (distingue incompleto de malformado usando el campo de longitud MQTT) permiten reensamblar un paquete partido entre dos mensajes y despachar varios paquetes coalescidos en uno solo. El heurístico de texto de respaldo sigue intacto para tramas que no encajan en el framing estándar. Ver Tarea 26.
+- ✅ **E4 (validación de payloads):** `status_parser.py` rechaza (`None`) un payload que no es un dict, en vez de un dict "vacío" sin efecto aguas abajo; corrige un `TypeError` real sin capturar (`t` no-lista); loguea (antes en silencio) `ctl` ausente y zonas sin `rf`. Sin librería nueva (`voluptuous` no está en el entorno P0/P1); permisivo ante claves adicionales desconocidas. Ver Tarea 26.
+- ✅ **E6 (evaluar paho-mqtt):** decisión documentada de **no migrar** — no soporta de forma nativa una URL WSS firmada con SigV4 que hay que re-firmar antes de cada reconexión; el ahorro real de código no compensa el riesgo de re-validar en producción el comportamiento de reconexión ya depurado (Tareas 8/20). Ver Tarea 26 y `docs/development-roadmap.md`.
+- ✅ **F3 (modo auto):** confirmado que el protocolo no tiene ningún modo de cambio automático calor/frío (`m` 0-5 cubre exactamente las 6 combinaciones AC/suelo × calor/frío, sin hueco extra). `const.HVAC_MODES` (con `"auto"`) no tenía consumidores; eliminado. Ver Tarea 27.
+- ✅ **F4 (control de suelo radiante, repurpose):** el `select.py` original (eliminado en A3) era un toggle roto de calor/frío ya duplicado por `climate.hvac_mode`. En su lugar, nueva entidad `MySairFloorSwitch` (`switch.py`) que controla el suelo radiante reutilizando el comando `mode` existente (recalcula `m` con `compute_mode_value`, sin comando nuevo) — hueco genuino que no cubría ninguna entidad hasta ahora. Ver Tarea 27.
 
 Pendientes:
 - 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente; los duplicados de `feedback` vistos en producción encajan aquí).
@@ -259,3 +264,4 @@ Pendientes:
 
 Decisiones de alcance (no son bugs):
 - **Solo primera `Location`** (#15) — soportar varias `Location` queda deliberadamente fuera de alcance.
+- **Temporizador/programas** (F6, `known-unknowns.md` #27) — descartado: la forma del payload de escritura nunca se decodificó en el bundle (ni existe un `setPrograms`), implementarlo exigiría inventar campos. No se retoma salvo una captura real de producción.

@@ -158,6 +158,22 @@ async def test_event_from_other_installation_is_ignored(hass, monkeypatch):
     assert hass.states.get("climate.salon").state == before
 
 
+async def test_malformed_status_payload_does_not_fire_update_event(hass, monkeypatch):
+    # E4: mqtt_message_callback (__init__.py) rechaza (no dispara
+    # mysair_update) cuando parse_status_payload devuelve None por recibir
+    # un payload que no es ni siquiera un dict.
+    entry = await _setup_entry(hass, monkeypatch)
+    mqtt_client = hass.data[DOMAIN][entry.entry_id]["mqtt"]
+
+    events = []
+    hass.bus.async_listen(f"{DOMAIN}_update", events.append)
+
+    mqtt_client.message_callback({"topic": "pro/v1/get/ctl/INST_A/status", "payload": "not-a-dict"})
+    await hass.async_block_till_done()
+
+    assert events == []
+
+
 async def test_climate_set_hvac_mode_sends_command(hass, monkeypatch):
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
@@ -228,6 +244,67 @@ async def test_switch_preserves_last_ac_mode_from_mqtt(hass, monkeypatch):
     )
 
     assert calls[-1]["value"] == "1"
+
+
+# --- Control de suelo radiante (F4) ---
+
+async def test_floor_switch_unavailable_without_capability(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(allow_floor=False, is_floor=False))
+    await hass.async_block_till_done()
+
+    assert hass.states.get("switch.salon_suelo").state == "unavailable"
+
+
+async def test_floor_switch_available_and_reflects_state_with_capability(hass, monkeypatch):
+    await _setup_entry(hass, monkeypatch)
+
+    _fire_status(hass, "INST_A", _zone(allow_floor=True, is_floor=False))
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.salon_suelo").state == "off"
+
+    _fire_status(hass, "INST_A", _zone(allow_floor=True, is_floor=True, mode_raw="4", is_ac=True))
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.salon_suelo").state == "on"
+
+
+async def test_floor_switch_turn_on_preserves_heat_cool_and_ac(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    # Zona en AC-only frío (m="1"): activar suelo debe pasar a AC+suelo frío (m="5").
+    _fire_status(hass, "INST_A", _zone(
+        allow_floor=True, is_floor=False, is_ac=True, mode_raw="1", is_heat=False, is_cool=True, temp_target=23.0,
+    ))
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.salon_suelo"}, blocking=True
+    )
+
+    assert calls[-1] == {
+        "ctl": "INST_A", "device": "DEV_1", "command_type": "mode", "value": "5", "temperature": 23.0
+    }
+    assert hass.states.get("switch.salon_suelo").state == "on"
+
+
+async def test_floor_switch_turn_off_preserves_heat_cool_and_ac(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+    # AC+suelo calor (m="4"): apagar suelo debe volver a AC-only calor ("0").
+    _fire_status(hass, "INST_A", _zone(
+        allow_floor=True, is_floor=True, is_ac=True, mode_raw="4", is_heat=True, is_cool=False, temp_target=21.0,
+    ))
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.salon_suelo"}, blocking=True
+    )
+
+    assert calls[-1] == {
+        "ctl": "INST_A", "device": "DEV_1", "command_type": "mode", "value": "0", "temperature": 21.0
+    }
+    assert hass.states.get("switch.salon_suelo").state == "off"
 
 
 async def test_humidity_sensor_updates_from_mqtt_event(hass, monkeypatch):

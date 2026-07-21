@@ -22,7 +22,10 @@ from mqtt_handler import (
     decode_varint,
     encode_varint,
     parse_mqtt_publish,
+    FrameState,
+    MAX_RECV_BUFFER_SIZE,
     MySairMQTTClient,
+    _next_packet_length,
 )
 from api import MySairAPI
 
@@ -505,3 +508,120 @@ def test_last_close_code_and_msg_set_on_close():
     assert client.connected is False
     assert client.last_close_code == 1006
     assert client.last_close_msg == "abnormal closure"
+
+
+# --- E2: frames parciales / múltiples paquetes por frame WS ---
+
+def _build_suback(packet_id=1, return_codes=b"\x00"):
+    variable = struct.pack("!H", packet_id) + return_codes
+    return b"\x90" + encode_varint(len(variable)) + variable
+
+
+def test_next_packet_length_distinguishes_incomplete_from_malformed():
+    assert _next_packet_length(b"") is FrameState.INCOMPLETE
+    assert _next_packet_length(b"\x30\x80") is FrameState.INCOMPLETE  # 1 byte de continuación, aún puede completarse
+    assert _next_packet_length(b"\x30\xff\xff\xff\xff") is FrameState.MALFORMED  # 4 bytes de continuación, nunca termina
+    assert _next_packet_length(b"\x30\x00") == 2  # remaining_length=0 -> paquete de 2 bytes
+
+
+def test_on_message_dispatches_two_coalesced_publishes_in_one_call():
+    client, received = _client()
+    frame1 = _build_publish_frame("pro/v1/get/ctl/INST_A/status", b'{"ctl":"INST_A"}')
+    frame2 = _build_publish_frame("pro/v1/get/ctl/INST_B/status", b'{"ctl":"INST_B"}')
+
+    client._on_message(None, frame1 + frame2)
+
+    assert len(received) == 2
+    assert received[0]["topic"] == "pro/v1/get/ctl/INST_A/status"
+    assert received[1]["topic"] == "pro/v1/get/ctl/INST_B/status"
+    assert client.parse_strict_count == 2
+    assert client._recv_buffer == b""
+
+
+def test_on_message_dispatches_connack_and_suback_coalesced():
+    client = _client_with_creds()
+    connack = b"\x20\x02\x00\x00"
+    suback = _build_suback(packet_id=1)
+
+    client._on_message(None, connack + suback)
+
+    assert client.connected is True
+    assert client._reconnect_attempt == 0
+    assert client._recv_buffer == b""
+
+
+@pytest.mark.parametrize("split_at_fn", [
+    lambda topic, payload: 1,  # tras la cabecera fija, antes del varint
+    lambda topic, payload: 3,  # a mitad del prefijo de longitud de topic (2 bytes)
+    lambda topic, payload: 4 + len(topic) // 2,  # a mitad del topic
+    lambda topic, payload: 4 + len(topic) + len(payload) // 2,  # a mitad del payload
+])
+def test_on_message_reassembles_publish_split_across_two_calls(split_at_fn):
+    client, received = _client()
+    topic = "pro/v1/get/ctl/INST_A/status"
+    payload = b'{"ctl":"INST_A"}'
+    frame = _build_publish_frame(topic, payload)
+    split_at = split_at_fn(topic, payload)
+
+    client._on_message(None, frame[:split_at])
+    assert received == []  # aún incompleto, nada despachado todavía
+
+    client._on_message(None, frame[split_at:])
+    assert len(received) == 1
+    assert received[0]["topic"] == topic
+    assert received[0]["payload"] == {"ctl": "INST_A"}
+    assert client._recv_buffer == b""
+
+
+def test_on_message_legacy_fallback_unchanged_for_existing_fixtures():
+    # Re-confirma explícitamente que los tres escenarios del heurístico
+    # legacy (ver más arriba) siguen produciendo el mismo resultado bajo el
+    # nuevo bucle de reensamblado (E2) que antes de introducirlo.
+    client, received = _client()
+    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    client._on_message(None, msg)
+
+    assert len(received) == 1
+    assert received[0]["topic"] == "pro/v1/get/usr/web0077/feedback"
+    assert client._recv_buffer == b""
+
+
+def test_on_message_split_legacy_fallback_message_across_two_calls():
+    # El heurístico legacy no tiene framing real (no usa un remaining_length
+    # de verdad), así que solo puede reensamblarse correctamente si el corte
+    # ocurre ANTES de que el buffer alcance la "longitud declarada" (2 bytes
+    # en este fixture, ver test_next_packet_length_...) que dispara el
+    # intento de despacho. Es una limitación inherente del propio fallback
+    # sin framing, no de la partición en sí: los PUBLISH bien formados se
+    # reensamblan en cualquier punto de corte (ver test parametrizado de
+    # arriba).
+    client, received = _client()
+    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+
+    client._on_message(None, msg[:1])
+    assert received == []
+
+    client._on_message(None, msg[1:])
+    assert len(received) == 1
+    assert received[0]["topic"] == "pro/v1/get/usr/web0077/feedback"
+
+
+def test_recv_buffer_resets_when_declared_length_exceeds_cap():
+    client, received = _client()
+    huge_len = MAX_RECV_BUFFER_SIZE + 1
+    header = b"\x30" + encode_varint(huge_len)  # muy lejos de completarse, pero ya excede el cap
+
+    client._on_message(None, header)
+
+    assert client._recv_buffer == b""
+    assert received == []
+
+
+def test_recv_buffer_resets_on_malformed_varint():
+    client, received = _client()
+    # 4 bytes de continuación tras la cabecera fija: nunca puede terminar el
+    # varint de longitud MQTT (máximo 4 bytes permitidos por el estándar).
+    client._on_message(None, b"\x30\xff\xff\xff\xff")
+
+    assert client._recv_buffer == b""
+    assert received == []

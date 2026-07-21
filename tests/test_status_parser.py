@@ -7,7 +7,13 @@ Semántica confirmada desde la app oficial (docs/protocol-findings.md):
 
 import pytest
 
-from status_parser import parse_mode, parse_status_payload, parse_status_value, parse_feedback_payload
+from status_parser import (
+    compute_mode_value,
+    parse_mode,
+    parse_status_payload,
+    parse_status_value,
+    parse_feedback_payload,
+)
 
 
 # --- parse_status_value ---
@@ -62,6 +68,35 @@ def test_parse_mode_none():
 
 def test_parse_mode_non_numeric():
     assert parse_mode("x") == ("x", None, None, None, None)
+
+
+# --- compute_mode_value (F4, inversa de parse_mode) ---
+
+@pytest.mark.parametrize(
+    "is_heat,is_ac,is_floor,expected",
+    [
+        (True, True, False, "0"),   # AC calor
+        (False, True, False, "1"),  # AC frío
+        (True, False, True, "2"),   # suelo calor
+        (False, False, True, "3"),  # suelo frío
+        (True, True, True, "4"),    # AC+suelo calor
+        (False, True, True, "5"),   # AC+suelo frío
+    ],
+)
+def test_compute_mode_value_matches_confirmed_table(is_heat, is_ac, is_floor, expected):
+    assert compute_mode_value(is_heat, is_ac, is_floor) == expected
+
+
+def test_compute_mode_value_roundtrips_with_parse_mode():
+    for m in ("0", "1", "2", "3", "4", "5"):
+        _, is_heat, _, is_ac, is_floor = parse_mode(m)
+        assert compute_mode_value(is_heat, is_ac, is_floor) == m
+
+
+def test_compute_mode_value_forces_ac_when_neither_medium_active():
+    # Combinación que la app nunca genera: se fuerza AC=True en vez de
+    # enviar un 'm' nunca visto en el bundle.
+    assert compute_mode_value(is_heat=True, is_ac=False, is_floor=False) == "0"
 
 
 # --- parse_status_payload ---
@@ -172,7 +207,46 @@ def test_parse_status_payload_missing_value():
 
 
 def test_parse_status_payload_non_dict_input():
-    assert parse_status_payload(None) == {"ctl": None, "zones": []}
+    # E4: un payload que no es ni siquiera un dict se rechaza (None), en vez
+    # de devolver un dict "vacío" que de todas formas no hace nada aguas abajo.
+    assert parse_status_payload(None) is None
+
+
+def test_parse_status_payload_non_dict_input_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    parse_status_payload(None)
+    assert "no es un dict" in caplog.text
+
+
+def test_parse_status_payload_t_not_a_list_logs_warning_and_yields_no_zones(caplog):
+    caplog.set_level("WARNING")
+    payload = {"ctl": "X", "value": '{"t": 42}'}
+
+    result = parse_status_payload(payload)
+
+    assert result == {"ctl": "X", "zones": []}
+    assert "campo 't' con forma inesperada" in caplog.text
+
+
+def test_parse_status_payload_missing_ctl_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    payload = {"value": '{"t":[{"rf":"D1","e":"1","m":"0"}]}'}
+
+    result = parse_status_payload(payload)
+
+    assert result["ctl"] is None
+    assert "sin 'ctl'" in caplog.text
+
+
+def test_parse_status_payload_zone_missing_rf_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    payload = {"ctl": "X", "value": '{"t":[{"e":"1","m":"0"}]}'}
+
+    zones = parse_status_payload(payload)["zones"]
+
+    assert len(zones) == 1
+    assert zones[0]["zone_id"] is None
+    assert "zona sin 'rf'" in caplog.text
 
 
 def test_parse_status_payload_skips_non_dict_thermostats():
@@ -203,5 +277,19 @@ def test_parse_feedback_payload_missing_fields():
 
 
 def test_parse_feedback_payload_non_dict_input():
-    result = parse_feedback_payload("not-a-dict")
-    assert result == {"order_id": None, "ctl": None, "raw": "not-a-dict"}
+    # E4: rechazado (None) en vez de un dict con raw preservado.
+    assert parse_feedback_payload("not-a-dict") is None
+
+
+def test_parse_feedback_payload_non_dict_input_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    parse_feedback_payload("not-a-dict")
+    assert "no es un dict" in caplog.text
+
+
+def test_parse_feedback_payload_missing_order_id_and_ctl_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    result = parse_feedback_payload({"unrelated": "field"})
+
+    assert result == {"order_id": None, "ctl": None, "raw": {"unrelated": "field"}}
+    assert "no se encontró" in caplog.text

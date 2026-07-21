@@ -73,6 +73,39 @@ def decode_varint(data, offset=0):
     return value, pos
 
 
+# Cap defensivo (E2): si el buffer de recepción crece sin completar un
+# paquete (stream corrupto/desincronizado), se descarta en vez de acumular
+# memoria indefinidamente.
+MAX_RECV_BUFFER_SIZE = 65536
+
+
+class FrameState:
+    """Resultado de `_next_packet_length` cuando no hay una longitud útil."""
+
+    INCOMPLETE = "incomplete"  # faltan bytes; puede completarse con más datos
+    MALFORMED = "malformed"  # el varint de longitud MQTT nunca podrá completarse
+
+
+def _next_packet_length(buffer):
+    """Longitud total (cabecera fija + varint + remaining_length) del primer
+    paquete MQTT al inicio de ``buffer``, o un ``FrameState`` si aún no se
+    puede determinar (E2, manejo de frames parciales/multi-paquete).
+
+    Distingue "incompleto" (esperar más bytes) de "malformado" (el varint
+    de longitud nunca terminará, más datos no ayudan): ``decode_varint``
+    devuelve ``(None, offset)`` en ambos casos, pero solo puede agotar los 4
+    bytes de continuación máximos de MQTT 3.1.1 si ya había al menos 4 bytes
+    disponibles tras la cabecera fija — con menos, siempre es por falta de
+    datos.
+    """
+    if len(buffer) < 1:
+        return FrameState.INCOMPLETE
+    remaining_length, pos = decode_varint(buffer, 1)
+    if remaining_length is None:
+        return FrameState.MALFORMED if (len(buffer) - 1) >= 4 else FrameState.INCOMPLETE
+    return pos + remaining_length
+
+
 def parse_mqtt_publish(message):
     """Decodifica un frame PUBLISH MQTT real: cabecera fija + Topic Name + payload.
 
@@ -253,6 +286,7 @@ class MySairMQTTClient:
         self.parse_error_count = 0  # D4: mensajes que no se pudieron parsear por ningún método
         self.last_close_code = None  # D4: código de cierre del último _on_close
         self.last_close_msg = None  # D4: mensaje de cierre del último _on_close
+        self._recv_buffer = b""  # E2: bytes WS acumulados aún no procesados (frames parciales/multi-paquete)
 
     @property
     def reconnect_attempt(self):
@@ -408,71 +442,150 @@ class MySairMQTTClient:
             log(f"❌ [MySair MQTT] Error enviando CONNECT: {e}", "error")
 
     def _on_message(self, ws, message):
-        """Evento: mensaje recibido desde el broker."""
+        """Evento: bytes recibidos desde el broker.
+
+        E2: no se asume que ``message`` sea exactamente un paquete MQTT
+        completo — se acumula en ``self._recv_buffer`` y se drena en bucle,
+        para soportar tanto varios paquetes coalescidos en un mismo mensaje
+        WS como un paquete partido entre dos llamadas.
+        """
         try:
-            # CONNACK
-            if message.startswith(b"\x20"):
-                log("✅ [MySair MQTT] CONNACK recibido, suscribiendo a topics...")
-                self.connected = True
-                self._reconnect_attempt = 0  # conexión lograda: reinicia el backoff (E3)
-                packet_id = 1
-                for ref in self.installation_refs:
-                    topic = build_status_topic(self._base_topic, ref)
-                    pkt = build_mqtt_subscribe(packet_id, topic)
-                    ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
-                    log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {topic}", "debug")
-                    packet_id += 1
-
-                # Confirmación (ACK) de instrucciones enviadas por HTTP, ver
-                # docs/protocol-findings.md §8.
-                if self._mqtt_user:
-                    feedback_topic = build_feedback_topic(self._base_topic, self._mqtt_user)
-                    pkt = build_mqtt_subscribe(packet_id, feedback_topic)
-                    ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
-                    log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {feedback_topic}", "debug")
-                return
-
-            # SUBACK
-            if message.startswith(b"\x90"):
-                log("✅ [MySair MQTT] SUBACK recibido.", "debug")
-                return
-
-            # Mensaje de tipo PUBLISH
-            if message.startswith(b"\x30"):
-                try:
-                    # Método primario: decodificación conforme al estándar
-                    # MQTT (ver parse_mqtt_publish, known-unknowns #6). Si no
-                    # es concluyente (mensaje con forma inesperada), cae a la
-                    # heurística de texto anterior como red de seguridad.
-                    strict_topic, strict_payload = parse_mqtt_publish(message)
-
-                    if strict_topic is not None:
-                        decoded = strict_payload.decode("utf-8", errors="ignore").strip()
-                        data, _ = _extract_json(decoded)
-                        topic = strict_topic
-                        self.parse_strict_count += 1  # D4
-                    else:
-                        payload = message.split(b"\x00", 2)[-1]
-                        decoded = payload.decode("utf-8", errors="ignore").strip()
-                        data, start = _extract_json(decoded)
-                        # Confirmado en producción (2026-07-20) que el broker
-                        # no siempre envuelve el topic entre paréntesis: a
-                        # veces es "(topic){json}", a veces "topic{json}" sin
-                        # paréntesis (p. ej. el topic de feedback).
-                        topic = decoded[:start].strip(" ()") if start > 0 else "unknown"
-                        self.parse_fallback_count += 1  # D4
-
-                    self.last_message_at = datetime.datetime.now(datetime.timezone.utc)  # D3
-                    log(f"📥 [MySair MQTT] Mensaje MQTT recibido ({topic}): {decoded[:200]}...", "debug")
-
-                    if self.message_callback:
-                        self.message_callback({"topic": topic, "payload": data})
-
-                except Exception as e:
-                    self.parse_error_count += 1  # D4
-                    log(f"⚠️ [MySair MQTT] Error procesando mensaje: {e}", "warning")
+            self._recv_buffer += message
+            self._drain_recv_buffer(ws)
         except Exception as e:
             log(f"⚠️ [MySair MQTT] Error general en _on_message: {e}", "warning")
+
+    def _drain_recv_buffer(self, ws):
+        """Extrae y despacha del buffer todos los paquetes MQTT completos
+        que pueda, dejando en el buffer solo el resto incompleto (E2).
+
+        No hace falta un cap aparte para el caso "incompleto, esperando más
+        bytes": la comprobación ``result > MAX_RECV_BUFFER_SIZE`` de abajo ya
+        garantiza que el buffer nunca puede crecer más allá del cap mientras
+        espera un paquete legítimo (una longitud declarada por encima del
+        cap se rechaza de inmediato, antes de esperar a que lleguen tantos
+        bytes).
+        """
+        while True:
+            result = _next_packet_length(self._recv_buffer)
+
+            if result is FrameState.INCOMPLETE:
+                return  # esperar más bytes en la próxima llamada
+
+            if result is FrameState.MALFORMED or result > MAX_RECV_BUFFER_SIZE:
+                self._recover_from_malformed_stream()
+                return
+
+            if len(self._recv_buffer) < result:
+                return  # partición real: falta el resto de este paquete
+
+            packet, rest = self._recv_buffer[:result], self._recv_buffer[result:]
+            if not self._dispatch_packet(ws, packet):
+                # El "paquete" delimitado por la longitud no supera la
+                # validación de contenido (p. ej. bytes que no son una trama
+                # MQTT real pero coinciden por casualidad con un varint
+                # válido). Igual que antes de E2, se aplica el heurístico de
+                # texto de respaldo al buffer completo restante y se
+                # renuncia a seguir troceándolo.
+                self._dispatch_legacy_fallback(self._recv_buffer)
+                self._recv_buffer = b""
+                return
+
+            self._recv_buffer = rest  # sigue buscando más paquetes coalescidos
+
+    def _recover_from_malformed_stream(self):
+        log(
+            "⚠️ [MySair MQTT] Varint de longitud MQTT inválido o longitud de paquete "
+            "absurda; se descarta el buffer de recepción.",
+            "warning",
+        )
+        self._recv_buffer = b""
+
+    def _dispatch_packet(self, ws, packet):
+        """Procesa un paquete MQTT ya delimitado a su longitud exacta.
+
+        Devuelve ``True`` si se despachó (o se ignoró un tipo desconocido de
+        forma segura), o ``False`` solo si es un PUBLISH cuyo parseo
+        estricto de contenido falló (``parse_mqtt_publish`` no concluyente)
+        — en ese caso el llamador decide aplicar el heurístico de texto de
+        respaldo sobre el buffer completo, no sobre este `packet` aislado.
+        """
+        # CONNACK
+        if packet[0] == 0x20:
+            log("✅ [MySair MQTT] CONNACK recibido, suscribiendo a topics...")
+            self.connected = True
+            self._reconnect_attempt = 0  # conexión lograda: reinicia el backoff (E3)
+            packet_id = 1
+            for ref in self.installation_refs:
+                topic = build_status_topic(self._base_topic, ref)
+                pkt = build_mqtt_subscribe(packet_id, topic)
+                ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
+                log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {topic}", "debug")
+                packet_id += 1
+
+            # Confirmación (ACK) de instrucciones enviadas por HTTP, ver
+            # docs/protocol-findings.md §8.
+            if self._mqtt_user:
+                feedback_topic = build_feedback_topic(self._base_topic, self._mqtt_user)
+                pkt = build_mqtt_subscribe(packet_id, feedback_topic)
+                ws.send(pkt, opcode=websocket.ABNF.OPCODE_BINARY)
+                log(f"📡 [MySair MQTT] SUBSCRIBE enviado a: {feedback_topic}", "debug")
+            return True
+
+        # SUBACK
+        if packet[0] == 0x90:
+            log("✅ [MySair MQTT] SUBACK recibido.", "debug")
+            return True
+
+        # PUBLISH (nibble alto 0x3; los bits bajos son flags DUP/QoS/RETAIN)
+        if (packet[0] & 0xF0) == 0x30:
+            try:
+                # Método primario: decodificación conforme al estándar MQTT
+                # (ver parse_mqtt_publish, known-unknowns #6). Si no es
+                # concluyente, el llamador cae al heurístico de texto.
+                strict_topic, strict_payload = parse_mqtt_publish(packet)
+                if strict_topic is None:
+                    return False
+
+                decoded = strict_payload.decode("utf-8", errors="ignore").strip()
+                data, _ = _extract_json(decoded)
+                self.parse_strict_count += 1  # D4
+                self.last_message_at = datetime.datetime.now(datetime.timezone.utc)  # D3
+                log(f"📥 [MySair MQTT] Mensaje MQTT recibido ({strict_topic}): {decoded[:200]}...", "debug")
+
+                if self.message_callback:
+                    self.message_callback({"topic": strict_topic, "payload": data})
+                return True
+            except Exception as e:
+                self.parse_error_count += 1  # D4
+                log(f"⚠️ [MySair MQTT] Error procesando mensaje: {e}", "warning")
+                return True  # ya contabilizado como error; no reintentar como heurístico
+
+        # Tipo de paquete desconocido/no manejado: se ignora en silencio,
+        # igual que antes de E2.
+        return True
+
+    def _dispatch_legacy_fallback(self, buffer):
+        """Heurística de texto de respaldo (sin cambios respecto a antes de
+        E2), aplicada ahora al buffer completo en vez de a un `message`
+        crudo — equivalente cuando no hay reensamblado en curso."""
+        try:
+            payload = buffer.split(b"\x00", 2)[-1]
+            decoded = payload.decode("utf-8", errors="ignore").strip()
+            data, start = _extract_json(decoded)
+            # Confirmado en producción (2026-07-20) que el broker no siempre
+            # envuelve el topic entre paréntesis: a veces es "(topic){json}",
+            # a veces "topic{json}" sin paréntesis (p. ej. el topic de feedback).
+            topic = decoded[:start].strip(" ()") if start > 0 else "unknown"
+            self.parse_fallback_count += 1  # D4
+            self.last_message_at = datetime.datetime.now(datetime.timezone.utc)  # D3
+            log(f"📥 [MySair MQTT] Mensaje MQTT recibido ({topic}): {decoded[:200]}...", "debug")
+
+            if self.message_callback:
+                self.message_callback({"topic": topic, "payload": data})
+        except Exception as e:
+            self.parse_error_count += 1  # D4
+            log(f"⚠️ [MySair MQTT] Error procesando mensaje: {e}", "warning")
 
     def _on_error(self, ws, error):
         log(f"❌ [MySair MQTT] Error WebSocket: {error}", "error")

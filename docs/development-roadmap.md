@@ -62,11 +62,11 @@
 | # | Tarea | Prio |
 |---|---|---|
 | E1 | Parser MQTT robusto: decodificar la cabecera MQTT real (longitud de topic, packet id) en vez de `split`/`{...}`. | ✅ Hecho (`known-unknowns` #6 resuelto) — usado como método primario con fallback a la heurística anterior si no es concluyente. |
-| E2 | Manejo de frames parciales / múltiples paquetes por frame WS. | 🟡 |
+| E2 | Manejo de frames parciales / múltiples paquetes por frame WS. | ✅ Hecho (2026-07-21) — `mqtt_handler.py`: `self._recv_buffer` acumula bytes entre llamadas a `_on_message`; `_next_packet_length` distingue incompleto de malformado usando la longitud declarada por MQTT; el heurístico de texto de respaldo sigue intacto para tramas que no encajan en el framing estándar. |
 | E3 | Backoff exponencial con jitter en reconexión (hoy fijo 10 s). | ✅ Hecho — `compute_backoff_delay` (base 10 s, tope 120 s, jitter ±20%); se resetea el contador de intentos al reconectar (CONNACK) y los reconectes planificados (refresco de credenciales) siguen sin espera. |
-| E4 | Validación de esquema de payloads (rechazar/loguear los inesperados). | 🟡 |
+| E4 | Validación de esquema de payloads (rechazar/loguear los inesperados). | ✅ Hecho (2026-07-21) — `status_parser.py` rechaza (`None`) un payload que no es un dict; loguea (antes en silencio) `ctl` ausente, campo `t` con forma inesperada y zonas sin `rf`. Sin librería nueva (`voluptuous` no está disponible en el entorno de tests P0/P1); permisivo ante claves adicionales desconocidas. |
 | E5 | Evaluar `client_id` propio distinto del de la app oficial para evitar expulsiones (`known-unknowns` #20). | ✅ Hecho |
-| E6 | Evaluar migrar a `paho-mqtt` sobre WebSocket con SigV4, reduciendo código artesanal. Nota: se eliminó de `requirements` en A4 por no usarse; volver a añadirlo si se retoma esta tarea. | 🟡 |
+| E6 | Evaluar migrar a `paho-mqtt` sobre WebSocket con SigV4, reduciendo código artesanal. | ✅ Evaluado (2026-07-21) — **decisión: no migrar.** `paho-mqtt` no soporta de forma nativa una URL WSS firmada con SigV4 que hay que re-firmar antes de cada reconexión (la necesidad real detrás de las Tareas 8/20); migrar solo sustituiría ~150-200 líneas de framing MQTT de bajo nivel (varint, `parse_mqtt_publish`, etc.) mientras se reescribe el resto del pegamento (refresco proactivo de credenciales, backoff E3, observabilidad D3/D4) a mano igual. El coste de re-validar en producción el comportamiento de reconexión ya depurado no compensa el ahorro de código. Se eliminó de `requirements` en A4 por no usarse; no se reintroduce. |
 | E7 | Reconciliación de estado optimista con timeout (revertir si no llega confirmación MQTT). | ✅ Hecho — suscripción a `feedback`, correlación por `orderId`, y revert del estado optimista (temperatura/modo/fan_mode/switch) si no llega confirmación a tiempo; se descarta si llega un status real antes. |
 
 ---
@@ -77,10 +77,10 @@
 |---|---|---|
 | F1 | Sensor de humedad (`hm`) y disponibilidad real de heat/cool en `climate.hvac_modes` según capacidades (`c`/`f`). | ✅ Hecho |
 | F2 | Exponer velocidad de ventilador (`fanspeed`/`vv`). Desbloqueado: mapeo confirmado en el componente real de la app (`known-unknowns` #24, `protocol-findings.md §9`) — `vv`: `"0"`=sin modo, `"1"/"2"/"3"`=manual, `"4"`=auto. | ✅ Hecho |
-| F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | 🟢 |
-| F4 | `select` de modo reescrito y funcional. | 🟢 |
+| F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | ✅ Evaluado (2026-07-21) — **decisión: sin soporte de protocolo.** `m` (0-5) cubre exactamente las 6 combinaciones AC/suelo × calor/frío; no hay hueco para un modo de cambio automático. `const.HVAC_MODES` era código muerto (sin consumidores), eliminado. |
+| F4 | `select` de modo reescrito y funcional. | ✅ Hecho (2026-07-21) — **repurpose:** el `select.py` original era un toggle roto de calor/frío ya duplicado por `climate.hvac_mode`; en su lugar se implementó control real de suelo radiante (`switch.py` → `MySairFloorSwitch`), un hueco genuino sin cubrir hasta ahora. Reutiliza el comando `mode` ya existente (recalculando `m`), sin comando nuevo. |
 | F5 | Servicios propios: `mysair.stop_installation` (comando `stop`, ya documentado, `value:"1"`) si aporta valor sobre apagar zona por zona. | ✅ Hecho — `api.send_installation_command(ctl, "stop"/"status")`; servicio registrado una vez por dominio (compartido entre config entries) y retirado al descargar la última. |
-| F6 | Temporizador (`temporizer`) y programas (`programs`) — mucho más trabajo (entidades nuevas fuera de climate/sensor/switch) y valores de parámetros sin confirmar. Más especulativo de la lista. | 🟢 |
+| F6 | Temporizador (`temporizer`) y programas (`programs`) — mucho más trabajo (entidades nuevas fuera de climate/sensor/switch) y valores de parámetros sin confirmar. Más especulativo de la lista. | 🟢 Descartado (2026-07-21) — **decisión de alcance:** la forma del payload para *fijar* un temporizador o programa nunca se decodificó en el bundle (ni siquiera existe un `setPrograms` de escritura, solo lectura); implementarlo requeriría inventar campos, contra la regla del proyecto. No se retoma salvo una captura real de producción con temporizador/programa configurado. Ver `known-unknowns.md` #27. |
 
 ---
 
@@ -100,4 +100,4 @@
 
 ~~A1 → A2 → A4 → A3 (estabilizar y limpiar) → A5/A6/A7 (requiere validación de protocolo) → B1–B3 (red de seguridad de tests)~~ — Fases A y B completas. `docs/known-unknowns.md` #6 (formato de frame MQTT, bloqueaba E1/E2) ya está resuelto — ninguna fila de esa tabla sigue marcada con riesgo 🔴 a día de hoy.
 
-**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), G completas. Quedan: E2, E4, E6 (robustez); F3, F4, F6.
+**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), G, E (E1-E6) y F (F1-F6) completas. E6 y F6 resueltas como decisiones documentadas (no migrar / no desarrollar), F3 como decisión de "sin soporte de protocolo" con limpieza de código muerto. No queda ninguna tarea numerada abierta en el roadmap; el resto de trabajo futuro vive en `docs/execution-plan.md` §Pendiente (ítems no numerados: C1-adjacent como refresco de logs sensibles ya cubierto en D2, mejoras de test P3, etc.).

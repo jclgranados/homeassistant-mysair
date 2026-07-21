@@ -6,6 +6,27 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-07-21
+
+### Added
+- Control de suelo radiante por zona: nuevo switch (uno por zona con esa capacidad) para encender/apagar el suelo, independiente del switch de encendido general. Reutiliza el comando `mode` ya existente (recalcula el valor internamente preservando el modo calor/frío y el estado de AC actuales) — no requiere ningún comando nuevo del backend. La entidad aparece como "no disponible" en zonas sin capacidad de suelo.
+
+### Removed
+- `const.HVAC_MODES` (incluía un modo `"auto"` sin ningún soporte real en el sistema ni consumidor en el código — código muerto).
+
+### Evaluado (sin cambios de código)
+- Temporizador y programas por horario: no se implementan. El backend no expone ninguna forma confirmada de fijarlos (solo de leerlos), y adivinar el formato no es una opción responsable. Se retomará si en el futuro aparece evidencia real (p. ej. una captura de una instalación con temporizador configurado).
+
+## [2.9.0] - 2026-07-21
+
+### Added
+- Reensamblado de frames MQTT (E2): el cliente ya no asume que cada mensaje WebSocket contiene exactamente un paquete MQTT completo. Ahora acumula los bytes recibidos y despacha tantos paquetes completos como haya (varios PUBLISH/CONNACK/SUBACK coalescidos en un mismo mensaje WS), y reensambla correctamente un paquete partido entre dos mensajes WS. Un cap defensivo descarta el buffer si crece sin completar un paquete o si una longitud declarada es absurda.
+- Validación de payloads (E4): `status_parser.py` rechaza explícitamente (y loguea) un payload que no es ni siquiera un dict, en vez de producir un evento vacío sin sentido; se loguean (antes en silencio) los casos de `ctl` ausente, campo `t` con forma inesperada, y zonas sin identificador (`rf`). Deliberadamente no se rechazan claves adicionales desconocidas del payload (permisivo ante campos nuevos del backend).
+- E6 (evaluar migrar a `paho-mqtt`): documentada la decisión de no migrar — ver `docs/development-roadmap.md`.
+
+### Fixed
+- Un campo `t` (zonas) con una forma inesperada que no fuera una lista (p. ej. un número) provocaba un `TypeError` sin capturar que descartaba el mensaje MQTT entero con un error genérico; ahora se degrada de forma segura con un aviso específico en logs.
+
 ## [2.8.0] - 2026-07-21
 
 ### Added
