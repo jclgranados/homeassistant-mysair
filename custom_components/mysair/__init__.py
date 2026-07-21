@@ -6,6 +6,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 
 from .api import MySairAPI, MySairAuthError, MySairConnectionError
+from .coordinator import MySairCoordinator
 from .mqtt_handler import MySairMQTTClient
 from .status_parser import parse_status_payload, parse_feedback_payload
 from .const import DOMAIN, SERVICE_STOP_INSTALLATION, ATTR_INSTALLATION_REF
@@ -90,6 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         "devices": all_devices,
         "installations": installation_refs,
         "mqtt": None,
+        "coordinator": None,
     }
 
     # --- CALLBACK PARA MQTT (con parseo de mensajes status) ---
@@ -114,7 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             # docs/protocol-findings.md §8). Evento propio, no mysair_update.
             elif topic.endswith("/feedback"):
                 feedback = parse_feedback_payload(payload)
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[MySair MQTT] ✅ Confirmación recibida: orderId={feedback['order_id']} "
                     f"ctl={feedback['ctl']}"
                 )
@@ -141,6 +143,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     # Lanzar el hilo MQTT sin bloquear el loop
     await hass.async_add_executor_job(mqtt_client.start)
+
+    # --- COORDINADOR (C1): redistribuye mysair_update por zona en vez de que
+    # cada entidad repita el mismo filtrado de topic/ctl/zone_id (ver
+    # coordinator.py). Se arranca antes de las plataformas para que ya esté
+    # escuchando cuando las entidades se den de alta. ---
+    coordinator = MySairCoordinator(hass, installation_refs)
+    coordinator.start()
+    hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
 
     # --- PLATAFORMAS ---
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -203,10 +213,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Descarga la integración MySair y libera recursos (MQTT, tareas, estado).
 
-    Orden de cierre: primero se descargan las plataformas (las entidades quitan
-    sus listeners del bus), después se detiene el cliente MQTT y por último se
-    limpia el estado en memoria. La tarea periódica se cancela sola por estar
-    creada con entry.async_create_background_task.
+    Orden de cierre: primero se descargan las plataformas (las entidades se
+    desconectan del coordinador), después se detiene el coordinador y el
+    cliente MQTT, y por último se limpia el estado en memoria. La tarea
+    periódica se cancela sola por estar creada con
+    entry.async_create_background_task.
     """
     _LOGGER.info("[MySair] 🔌 Deteniendo integración y cerrando sesiones...")
 
@@ -214,6 +225,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id, None)
         if data:
+            coordinator = data.get("coordinator")
+            if coordinator:
+                coordinator.stop()
             mqtt_client = data.get("mqtt")
             if mqtt_client:
                 await hass.async_add_executor_job(mqtt_client.stop)

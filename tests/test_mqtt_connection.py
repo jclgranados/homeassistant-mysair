@@ -436,3 +436,72 @@ def test_reconnect_attempt_resets_on_connack():
     client._on_message(None, b"\x20\x02\x00\x00")
 
     assert client._reconnect_attempt == 0
+
+
+def test_reconnect_attempt_property_mirrors_private_attribute():
+    client = _client_with_creds()
+    client._reconnect_attempt = 3
+    assert client.reconnect_attempt == 3
+
+
+# --- Observabilidad: last_message_at, contadores de parseo, reconexiones (D3/D4) ---
+
+def test_last_message_at_set_on_strict_parse_success():
+    client, _ = _client()
+    assert client.last_message_at is None
+
+    topic = "pro/v1/get/usr/web0077/feedback"
+    payload = b'{"orderId":"5b1ae0","ctl":"INST_A"}'
+    frame = _build_publish_frame(topic, payload, qos=0)
+    client._on_message(None, frame)
+
+    assert client.last_message_at is not None
+    assert client.parse_strict_count == 1
+    assert client.parse_fallback_count == 0
+
+
+def test_last_message_at_set_on_fallback_parse_success():
+    client, _ = _client()
+    msg = _publish_message(b'pro/v1/get/usr/web0077/feedback{"orderId":"5b1ae0","ctl":"INST_A"}')
+    client._on_message(None, msg)
+
+    assert client.last_message_at is not None
+    assert client.parse_fallback_count == 1
+    assert client.parse_strict_count == 0
+
+
+def test_parse_error_count_increments_on_unparseable_message():
+    client, _ = _client()
+    # PUBLISH sin ningún JSON: ni el estricto ni la heurística de texto
+    # encuentran nada, así que cae en el except y cuenta como error.
+    msg = b"\x30" + b"\x00sin json aqui\x00"
+    client._on_message(None, msg)
+
+    assert client.parse_error_count == 1
+    assert client.parse_strict_count == 0
+    assert client.parse_fallback_count == 0
+
+
+def test_total_reconnects_does_not_reset_on_connack_unlike_reconnect_attempt():
+    # total_reconnects es acumulado durante toda la vida del cliente (D4);
+    # _reconnect_attempt, en cambio, se resetea en cada CONNACK logrado (E3).
+    client = _client_with_creds()
+    client._reconnect_attempt = 3
+    client.total_reconnects = 3
+
+    client._on_message(None, b"\x20\x02\x00\x00")  # CONNACK
+
+    assert client._reconnect_attempt == 0
+    assert client.total_reconnects == 3
+
+
+def test_last_close_code_and_msg_set_on_close():
+    client = _client_with_creds()
+    assert client.last_close_code is None
+    assert client.last_close_msg is None
+
+    client._on_close(None, 1006, "abnormal closure")
+
+    assert client.connected is False
+    assert client.last_close_code == 1006
+    assert client.last_close_msg == "abnormal closure"

@@ -58,7 +58,8 @@ Nota (fase de estabilización): la integración se movió a `custom_components/m
 | `refresh_status_periodic` | `__init__.py:151` | Cada 60 s pide `status`/`sync` a cada instalación por HTTP | event loop task |
 | `MySairAPI` | `api.py:12` | Login, refresh tokens, credenciales AWS, descubrimiento, instrucciones, firma SigV4 | executor (bloqueante) |
 | `MySairMQTTClient` | `mqtt_handler.py:69` | Conexión WSS, CONNECT/SUBSCRIBE manuales, reconexión | hilo daemon propio |
-| Entidades | `climate/sensor/switch.py` | Escuchan `mysair_update`, filtran por `ctl`+`zone_id`, actualizan estado | event loop |
+| `MySairCoordinator` | `coordinator.py` | Escucha `mysair_update` **una sola vez** por config entry, filtra por instalación propia y redistribuye cada zona por separado vía `homeassistant.helpers.dispatcher` (C1) | event loop |
+| Entidades | `climate/sensor/switch.py` | Se suscriben a la señal de dispatcher de su propia zona (`coordinator.signal_zone_update`), ya sin filtrar `ctl`/`zone_id`; actualizan estado | event loop |
 
 ### Dependencias entre módulos (Confirmado)
 
@@ -69,7 +70,7 @@ mqtt_handler.py ─► api.py (aws_credentials, aws_sign_url)
 climate/sensor/switch.py ─► const.py (DOMAIN)  y  hass.data[DOMAIN][entry_id]["api"]
 ```
 
-Las entidades **no** conocen `MySairMQTTClient` directamente: se comunican con él a través del **event bus** de HA (`mysair_update`). Acoplamiento por evento. **Confirmado**.
+Las entidades **no** conocen `MySairMQTTClient` directamente: se comunican con él a través del **event bus** de HA (`mysair_update`), pero ya no escuchan ese evento cada una por su cuenta — `MySairCoordinator` (C1) es el único suscriptor del bus por config entry, y redistribuye cada zona por separado a la entidad correspondiente vía `homeassistant.helpers.dispatcher`. Acoplamiento por evento + dispatcher. **Confirmado**.
 
 ---
 
@@ -98,6 +99,7 @@ flowchart TB
         API["api.py<br/>MySairAPI (requests, sync)"]
         MQTT["mqtt_handler.py<br/>MySairMQTTClient (hilo)"]
         BUS(["Event bus<br/>mysair_update"])
+        COORD["coordinator.py<br/>MySairCoordinator (C1)"]
         CL["climate.py"]
         SE["sensor.py"]
         SW["switch.py"]
@@ -120,7 +122,8 @@ flowchart TB
     IOT -->|"PUBLISH .../status"| MQTT
     MQTT -->|callback| BUS
     REF -->|"POST /send/instruction (status)"| HTTP
-    BUS --> CL & SE & SW
+    BUS --> COORD
+    COORD -->|"dispatcher, señal por zona"| CL & SE & SW
     CL & SW -->|"send_zone_command → POST /send/instruction"| API
 ```
 
@@ -211,15 +214,17 @@ sequenceDiagram
     participant M as MySairMQTTClient._on_message
     participant CB as mqtt_message_callback
     participant BUS as event bus
+    participant CO as MySairCoordinator
     participant E as Entidad (climate/sensor/switch)
     IOT->>M: frame WSS binario (PUBLISH 0x30)
     M->>M: extrae topic + JSON del payload
     M->>CB: callback({topic, payload})
     CB->>CB: limpia ';' final, json.loads, parsea t[]
     CB->>BUS: call_soon_threadsafe(async_fire, mysair_update, {topic,data})
-    BUS->>E: _handle_mqtt_update(event)
-    E->>E: filtra ctl==inst_ref, zone_id==device_id
-    E->>E: actualiza estado + async_write_ha_state()
+    BUS->>CO: _handle_update(event) (único suscriptor, C1)
+    CO->>CO: filtra ctl en installation_refs, indexa por zona
+    CO->>E: async_dispatcher_send(signal_zone_update(ctl, zone_id), zone)
+    E->>E: _handle_zone_update(zone): actualiza estado + async_write_ha_state()
 ```
 
 ### 6.5 Envío de comando desde una entidad

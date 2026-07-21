@@ -10,6 +10,16 @@ from threading import Lock
 _LOGGER = logging.getLogger(__name__)
 
 
+def _truncate(text, limit=200):
+    """Limita la longitud de un cuerpo de respuesta antes de loguearlo (D2).
+
+    Evita que un cuerpo de error inesperado del backend (p. ej. si alguna
+    vez refleja parte de la petición) filtre más de lo necesario en los logs.
+    """
+    text = str(text) if text is not None else ""
+    return text if len(text) <= limit else text[:limit] + "…(truncado)"
+
+
 class MySairAuthError(Exception):
     """Credenciales o refresh_token inválidos/expirados: requiere reautenticación."""
 
@@ -89,10 +99,10 @@ class MySairAPI:
 
         if resp.status_code in (401, 403):
             _LOGGER.error(f"[MySairAPI] ❌ Login failed: credenciales inválidas ({resp.status_code})")
-            raise MySairAuthError(f"Login error: {resp.status_code} {resp.text}")
+            raise MySairAuthError(f"Login error: {resp.status_code} {_truncate(resp.text)}")
         if resp.status_code != 200:
-            _LOGGER.error(f"[MySairAPI] ❌ Login failed: {resp.status_code} {resp.text}")
-            raise MySairConnectionError(f"Login error: {resp.status_code} {resp.text}")
+            _LOGGER.error(f"[MySairAPI] ❌ Login failed: {resp.status_code} {_truncate(resp.text)}")
+            raise MySairConnectionError(f"Login error: {resp.status_code} {_truncate(resp.text)}")
 
         data = resp.json()
         self.entity = data.get("entity", {})
@@ -121,7 +131,7 @@ class MySairAPI:
         if not self.refresh_token_value:
             raise MySairAuthError("No hay refresh_token disponible.")
 
-        _LOGGER.info("[MySairAPI] 🔄 Renovando tokens de sesión...")
+        _LOGGER.debug("[MySairAPI] 🔄 Renovando tokens de sesión...")
         try:
             resp = self.session.put(
                 f"{self.base_url}/user/refreshtokens",
@@ -134,10 +144,10 @@ class MySairAPI:
 
         if resp.status_code in (401, 403):
             _LOGGER.error(f"[MySairAPI] ❌ Refresh token inválido o expirado: {resp.status_code}")
-            raise MySairAuthError(f"Refresh tokens error: {resp.status_code} {resp.text}")
+            raise MySairAuthError(f"Refresh tokens error: {resp.status_code} {_truncate(resp.text)}")
         if resp.status_code != 200:
-            _LOGGER.error(f"[MySairAPI] ❌ Error al refrescar tokens: {resp.status_code} {resp.text}")
-            raise MySairConnectionError(f"Refresh tokens error: {resp.status_code} {resp.text}")
+            _LOGGER.error(f"[MySairAPI] ❌ Error al refrescar tokens: {resp.status_code} {_truncate(resp.text)}")
+            raise MySairConnectionError(f"Refresh tokens error: {resp.status_code} {_truncate(resp.text)}")
 
         data = resp.json()
         entity = data.get("entity", {})
@@ -157,12 +167,12 @@ class MySairAPI:
     def refresh_aws_credentials(self):
         """Obtiene credenciales temporales de AWS IoT."""
         try:
-            _LOGGER.info("[MySairAPI] ☁️ Solicitando credenciales AWS MQTT...")
+            _LOGGER.debug("[MySairAPI] ☁️ Solicitando credenciales AWS MQTT...")
             headers = {"Authorization": f"Bearer {self.access_token}"}
             resp = self.session.put(f"{self.base_url}/user/refreshawscredentials", headers=headers, timeout=15)
 
             if resp.status_code != 200:
-                raise Exception(f"AWS credentials error: {resp.status_code} {resp.text}")
+                raise Exception(f"AWS credentials error: {resp.status_code} {_truncate(resp.text)}")
 
             data = resp.json()
             entity = data.get("entity", {})
@@ -194,7 +204,7 @@ class MySairAPI:
                 "aws_expires_at": entity.get("aws_expires_at"),
             }
 
-            _LOGGER.info(f"[MySairAPI] ✅ Credenciales AWS obtenidas para usuario {entity['aws_mqtt_user']}")
+            _LOGGER.debug(f"[MySairAPI] ✅ Credenciales AWS obtenidas para usuario {entity['aws_mqtt_user']}")
             return self.aws_credentials
 
         except Exception as e:
@@ -251,7 +261,7 @@ class MySairAPI:
             resp = self.session.get(f"{self.base_url}/locations", headers=headers, timeout=10)
 
             if resp.status_code != 200:
-                raise Exception(f"Locations error: {resp.status_code} {resp.text}")
+                raise Exception(f"Locations error: {resp.status_code} {_truncate(resp.text)}")
 
             return resp.json().get("entity", [])
         except Exception as e:
@@ -269,7 +279,7 @@ class MySairAPI:
                 timeout=10,
             )
             if resp.status_code != 200:
-                raise Exception(f"Installations error: {resp.status_code} {resp.text}")
+                raise Exception(f"Installations error: {resp.status_code} {_truncate(resp.text)}")
             return resp.json().get("entity", [])
         except Exception as e:
             _LOGGER.error(f"[MySairAPI] ❌ Error obteniendo instalaciones: {e}")
@@ -286,7 +296,7 @@ class MySairAPI:
                 timeout=10,
             )
             if resp.status_code != 200:
-                raise Exception(f"Devices error: {resp.status_code} {resp.text}")
+                raise Exception(f"Devices error: {resp.status_code} {_truncate(resp.text)}")
             return resp.json().get("entity", [])
         except Exception as e:
             _LOGGER.error(f"[MySairAPI] ❌ Error obteniendo devices: {e}")
@@ -300,7 +310,7 @@ class MySairAPI:
         Si el token ha expirado, renueva automáticamente los tokens y credenciales AWS y reintenta una vez.
         """
         try:
-            _LOGGER.info(f"[MySairAPI] 📤 Enviando instrucción: {instruction}")
+            _LOGGER.debug(f"[MySairAPI] 📤 Enviando instrucción: {instruction}")
             headers = {"Authorization": f"Bearer {self.access_token}"}
 
             resp = self.session.post(
@@ -311,9 +321,9 @@ class MySairAPI:
             # refresh_tokens() lanza MySairAuthError/MySairConnectionError si
             # falla; se propaga tal cual (capturado más abajo como Exception).
             if resp.status_code == 401:
-                _LOGGER.info("[MySairAPI] ⚠️ Token HTTP expirado, renovando sesión...")
+                _LOGGER.debug("[MySairAPI] ⚠️ Token HTTP expirado, renovando sesión...")
                 self.refresh_tokens()
-                _LOGGER.info("[MySairAPI] 🔄 Token HTTP renovado, actualizando credenciales AWS...")
+                _LOGGER.debug("[MySairAPI] 🔄 Token HTTP renovado, actualizando credenciales AWS...")
                 self.refresh_aws_credentials()
                 headers = {"Authorization": f"Bearer {self.access_token}"}
                 resp = self.session.post(
@@ -322,15 +332,15 @@ class MySairAPI:
 
             # --- Validación final ---
             if resp.status_code != 201:
-                raise Exception(f"Instruction error: {resp.status_code} {resp.text}")
+                raise Exception(f"Instruction error: {resp.status_code} {_truncate(resp.text)}")
 
             data = resp.json()
             msg = data.get("msg", "")
             error = data.get("error", [])
             if msg != "Creado" or error:
-                raise Exception(f"Instruction rejected: {data}")
+                raise Exception(f"Instruction rejected: {_truncate(data)}")
 
-            _LOGGER.info("[MySairAPI] ✅ Instrucción enviada correctamente")
+            _LOGGER.debug("[MySairAPI] ✅ Instrucción enviada correctamente")
             return data
 
         except Exception as e:
@@ -389,7 +399,7 @@ class MySairAPI:
                 "value": payload_value
             }]
 
-            _LOGGER.info(f"[MySairAPI] ⚙️ Enviando comando '{command_type}' a {device} ({ctl}) → {instruction}")
+            _LOGGER.debug(f"[MySairAPI] ⚙️ Enviando comando '{command_type}' a {device} ({ctl}) → {instruction}")
             return self.send_instruction(instruction)
 
         except Exception as e:
@@ -429,7 +439,7 @@ class MySairAPI:
                 "value": payload_value,
             }]
 
-            _LOGGER.info(f"[MySairAPI] 🏠 Enviando comando de instalación '{command_type}' a {ctl} → {instruction}")
+            _LOGGER.debug(f"[MySairAPI] 🏠 Enviando comando de instalación '{command_type}' a {ctl} → {instruction}")
             return self.send_instruction(instruction)
 
         except Exception as e:
