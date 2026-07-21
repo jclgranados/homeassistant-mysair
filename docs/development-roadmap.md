@@ -77,10 +77,10 @@
 |---|---|---|
 | F1 | Sensor de humedad (`hm`) y disponibilidad real de heat/cool en `climate.hvac_modes` según capacidades (`c`/`f`). | ✅ Hecho |
 | F2 | Exponer velocidad de ventilador (`fanspeed`/`vv`). Desbloqueado: mapeo confirmado en el componente real de la app (`known-unknowns` #24, `protocol-findings.md §9`) — `vv`: `"0"`=sin modo, `"1"/"2"/"3"`=manual, `"4"`=auto. | ✅ Hecho |
-| F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | 🟢 |
-| F4 | `select` de modo reescrito y funcional. | 🟢 |
+| F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | ✅ Evaluado (2026-07-21) — **decisión: sin soporte de protocolo.** `m` (0-5) cubre exactamente las 6 combinaciones AC/suelo × calor/frío; no hay hueco para un modo de cambio automático. `const.HVAC_MODES` era código muerto (sin consumidores), eliminado. |
+| F4 | `select` de modo reescrito y funcional. | ✅ Hecho (2026-07-21) — **repurpose:** el `select.py` original era un toggle roto de calor/frío ya duplicado por `climate.hvac_mode`; en su lugar se implementó control real de suelo radiante (`switch.py` → `MySairFloorSwitch`), un hueco genuino sin cubrir hasta ahora. Reutiliza el comando `mode` ya existente (recalculando `m`), sin comando nuevo. |
 | F5 | Servicios propios: `mysair.stop_installation` (comando `stop`, ya documentado, `value:"1"`) si aporta valor sobre apagar zona por zona. | ✅ Hecho — `api.send_installation_command(ctl, "stop"/"status")`; servicio registrado una vez por dominio (compartido entre config entries) y retirado al descargar la última. |
-| F6 | Temporizador (`temporizer`) y programas (`programs`) — mucho más trabajo (entidades nuevas fuera de climate/sensor/switch) y valores de parámetros sin confirmar. Más especulativo de la lista. | 🟢 |
+| F6 | Temporizador (`temporizer`) y programas (`programs`) — mucho más trabajo (entidades nuevas fuera de climate/sensor/switch) y valores de parámetros sin confirmar. Más especulativo de la lista. | 🟢 Descartado (2026-07-21) — **decisión de alcance:** la forma del payload para *fijar* un temporizador o programa nunca se decodificó en el bundle (ni siquiera existe un `setPrograms` de escritura, solo lectura); implementarlo requeriría inventar campos, contra la regla del proyecto. No se retoma salvo una captura real de producción con temporizador/programa configurado. Ver `known-unknowns.md` #27. |
 
 ---
 
@@ -100,4 +100,4 @@
 
 ~~A1 → A2 → A4 → A3 (estabilizar y limpiar) → A5/A6/A7 (requiere validación de protocolo) → B1–B3 (red de seguridad de tests)~~ — Fases A y B completas. `docs/known-unknowns.md` #6 (formato de frame MQTT, bloqueaba E1/E2) ya está resuelto — ninguna fila de esa tabla sigue marcada con riesgo 🔴 a día de hoy.
 
-**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), G y E (E1-E6) completas — E6 resuelta como decisión documentada de no migrar, no como implementación. Quedan: F3, F4, F6.
+**Estado real (2026-07-21):** Fases A, B, C, D (D1-D4), G, E (E1-E6) y F (F1-F6) completas. E6 y F6 resueltas como decisiones documentadas (no migrar / no desarrollar), F3 como decisión de "sin soporte de protocolo" con limpieza de código muerto. No queda ninguna tarea numerada abierta en el roadmap; el resto de trabajo futuro vive en `docs/execution-plan.md` §Pendiente (ítems no numerados: C1-adjacent como refresco de logs sensibles ya cubierto en D2, mejoras de test P3, etc.).

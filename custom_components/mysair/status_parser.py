@@ -75,6 +75,26 @@ def parse_mode(m):
     return mode_raw, is_heat, not is_heat, n in (0, 1, 4, 5), n in (2, 3, 4, 5)
 
 
+def compute_mode_value(is_heat, is_ac, is_floor):
+    """Calcula el valor de ``m`` a enviar por el comando ``mode`` dado el
+    estado deseado (inverso de ``parse_mode``, F4 — control de suelo).
+
+    Confirmado desde la app oficial (`docs/protocol-findings.md` §4):
+    ``base``: AC=0, Suelo=2, AC+Suelo=4 (calor); ``+1`` si frío.
+
+    Si ni AC ni suelo quedarían activos (combinación que la app nunca
+    genera, ver `toggleRadiatingFloor`/`setModeHeat`), se fuerza AC=True
+    para no enviar un ``m`` nunca visto en el bundle.
+    # TODO(validar): comportamiento exacto de la app en ese caso límite no
+    confirmado; no debería alcanzarse en uso normal (siempre queda al menos
+    un medio activo).
+    """
+    if not is_ac and not is_floor:
+        is_ac = True
+    base = 4 if (is_ac and is_floor) else (2 if is_floor else 0)
+    return str(base if is_heat else base + 1)
+
+
 def parse_status_payload(payload):
     """Normaliza el payload de un mensaje ``status`` a ``{"ctl", "zones"}``.
 

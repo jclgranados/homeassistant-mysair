@@ -130,14 +130,14 @@
 
 | `command` | `value` | Semántica | Implementado |
 |---|---|---|---|
-| `mode` | `{"mode":"0".."5","temperature":"<tc>"}` | **Encender / fijar modo.** `m`: par=calor, impar=frío; {0,1,4,5}=AC, {2,3,4,5}=suelo | ✅ (solo `0`/`1`, AC) |
+| `mode` | `{"mode":"0".."5","temperature":"<tc>"}` | **Encender / fijar modo.** `m`: par=calor, impar=frío; {0,1,4,5}=AC, {2,3,4,5}=suelo | ✅ (calor/frío desde `climate.py`; combinación AC/suelo desde `switch.py` → `MySairFloorSwitch`, F4 — reutiliza este mismo comando, recalculando `m` con `compute_mode_value`, sin comando nuevo) |
 | `power` | `"0"` | **Apagar** (no existe `power:"1"`; encender se hace con `mode`) | ✅ |
 | `temp` | `"<temperatura>"` (string) | Cambio de consigna | ✅ |
 | `status` | `"sync"` (con `device:""`) | Solicitar estado | ✅ |
-| `fanspeed` | `"<n>"` (string) | Velocidad de ventilador | ❌ (oportunidad) |
-| `temporizer` | `<timer>` | Temporizador | ❌ (oportunidad) |
-| `stop` | `"1"` | Parar instalación | ❌ |
-| `programs` | `""` | Leer programas | ❌ |
+| `fanspeed` | `"<n>"` (string) | Velocidad de ventilador | ✅ (F2) |
+| `stop` | `"1"` | Parar instalación | ✅ (F5, `send_installation_command`) |
+| `temporizer` | `<timer>` | Temporizador | ❌ — descartado (F6): forma del payload de escritura sin confirmar en el bundle, ver `known-unknowns.md` #27 |
+| `programs` | `""` | Leer programas | ❌ — descartado (F6): no hay comando de escritura confirmado, ver `known-unknowns.md` #27 |
 
 > ✅ **Resuelto:** la codificación de modo del **comando** (`0`=calor, `1`=frío para AC) **es correcta** en la integración. La antigua "inconsistencia" venía de que el parser de estado leía `e` (encendido) como si fuera el modo; corregido en `status_parser.py` (usa `e` para on/off y la paridad de `m` para calor/frío). `switch.turn_on` ya no fuerza frío: enciende con `mode` preservando el último modo (por defecto calor). Ver `docs/protocol-findings.md §7`.
 
