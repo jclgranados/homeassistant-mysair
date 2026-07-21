@@ -135,7 +135,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
             self.async_write_ha_state()
             return
 
-        _LOGGER.info(f"[MySair Climate] 🌡️ Cambiando temperatura a {new_temp}°C en {self.name}")
+        _LOGGER.debug(f"[MySair Climate] 🌡️ Cambiando temperatura a {new_temp}°C en {self.name}")
         try:
             response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,
@@ -162,7 +162,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         try:
             response = None
             if hvac_mode == HVACMode.HEAT:
-                _LOGGER.info(f"[MySair Climate] 🔥 Encendiendo {self.name} en CALOR a {self._target_temperature}°C")
+                _LOGGER.debug(f"[MySair Climate] 🔥 Encendiendo {self.name} en CALOR a {self._target_temperature}°C")
                 response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
@@ -173,7 +173,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
                 )
 
             elif hvac_mode == HVACMode.COOL:
-                _LOGGER.info(f"[MySair Climate] ❄️ Encendiendo {self.name} en FRÍO a {self._target_temperature}°C")
+                _LOGGER.debug(f"[MySair Climate] ❄️ Encendiendo {self.name} en FRÍO a {self._target_temperature}°C")
                 response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
@@ -184,7 +184,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
                 )
 
             elif hvac_mode == HVACMode.OFF:
-                _LOGGER.info(f"[MySair Climate] ⛔ Apagando {self.name}")
+                _LOGGER.debug(f"[MySair Climate] ⛔ Apagando {self.name}")
                 response = await self.hass.async_add_executor_job(
                     self.api.send_zone_command,
                     self.inst_ref,
@@ -209,7 +209,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
 
         wire_value = _FAN_MODE_HA_TO_WIRE.get(fan_mode, fan_mode)
         previous_fan_mode = self._fan_mode
-        _LOGGER.info(f"[MySair Climate] 🌀 Cambiando velocidad de ventilador a {fan_mode} en {self.name}")
+        _LOGGER.debug(f"[MySair Climate] 🌀 Cambiando velocidad de ventilador a {fan_mode} en {self.name}")
         try:
             response = await self.hass.async_add_executor_job(
                 self.api.send_zone_command,

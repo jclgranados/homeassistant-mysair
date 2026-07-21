@@ -42,9 +42,17 @@ async def async_get_config_entry_diagnostics(
 
     mqtt_state = None
     if mqtt_client is not None:
+        last_message_at = mqtt_client.last_message_at
         mqtt_state = {
             "connected": mqtt_client.connected,
-            "reconnect_attempt": mqtt_client._reconnect_attempt,
+            "reconnect_attempt": mqtt_client.reconnect_attempt,
+            "last_message_at": last_message_at.isoformat() if last_message_at else None,
+            "total_reconnects": mqtt_client.total_reconnects,
+            "parse_strict_count": mqtt_client.parse_strict_count,
+            "parse_fallback_count": mqtt_client.parse_fallback_count,
+            "parse_error_count": mqtt_client.parse_error_count,
+            "last_close_code": mqtt_client.last_close_code,
+            "last_close_msg": mqtt_client.last_close_msg,
         }
 
     return {

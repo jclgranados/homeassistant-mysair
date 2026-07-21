@@ -82,7 +82,7 @@ class CommandFeedbackMixin:
             return
         if not self._pending_order_id or event.data.get("order_id") != self._pending_order_id:
             return
-        _LOGGER.info(f"[MySair] ✅ Comando confirmado para {self.name} (orderId={self._pending_order_id})")
+        _LOGGER.debug(f"[MySair] ✅ Comando confirmado para {self.name} (orderId={self._pending_order_id})")
         self._pending_order_id = None
         self._pending_revert_fn = None
         if self._cancel_feedback_timeout:

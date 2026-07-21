@@ -6,6 +6,15 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-07-21
+
+### Added
+- Sensor `MySair Conexión MQTT` (uno por cuenta configurada): estado online/offline de la conexión MQTT, hora de la última actualización recibida, y métricas de reconexión/parseo (intentos de reconexión, reconexiones totales, mensajes decodificados por el método estricto/heurístico, mensajes que no se pudieron parsear, código del último cierre de conexión) (D3/D4).
+- `diagnostics.py` incluye ahora las mismas métricas de conexión/parseo.
+
+### Changed
+- Redacción de logs (D2): los cuerpos de respuesta HTTP de error se truncan antes de loguearse (evita que un cuerpo inesperado del backend filtre más de lo necesario), y el `clientId` MQTT enmascara el `access_key` de AWS que lleva embebido. Varios logs de alta frecuencia (un mensaje MQTT recibido, un comando enviado, una confirmación de comando) bajan de `INFO` a `DEBUG`; se mantienen en `INFO` los eventos de ciclo de vida (login, conexión/desconexión MQTT, arranque).
+
 ## [2.7.1] - 2026-07-21
 
 ### Changed

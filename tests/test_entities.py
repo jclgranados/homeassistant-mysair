@@ -14,6 +14,8 @@ pytest.importorskip("homeassistant")
 
 import homeassistant.util.dt as dt_util
 from homeassistant.components.climate.const import HVACMode, HVACAction
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity_component import async_update_entity
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.mysair.const import DOMAIN, FEEDBACK_TIMEOUT_SECONDS
@@ -290,7 +292,7 @@ async def test_climate_set_hvac_mode_rejected_when_not_allowed(hass, monkeypatch
 # --- Confirmación de comandos vía feedback (E7, docs/protocol-findings.md §8) ---
 
 async def test_climate_command_confirmed_via_feedback(hass, monkeypatch, caplog):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.DEBUG)
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
     _fire_status(hass, "INST_A", _zone())
@@ -383,7 +385,7 @@ async def test_climate_command_timeout_logs_warning_when_mqtt_connected(hass, mo
 
 
 async def test_switch_command_confirmed_via_feedback(hass, monkeypatch, caplog):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.DEBUG)
     calls = []
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
     _fire_status(hass, "INST_A", _zone())
@@ -638,3 +640,29 @@ async def test_climate_pending_revert_cleared_by_real_status(hass, monkeypatch):
 
     # Sigue en COOL: no se revierte, el pending ya se limpió con el status real.
     assert hass.states.get("climate.salon").state == HVACMode.COOL
+
+
+async def test_mqtt_status_sensor_reflects_connection_state(hass, monkeypatch):
+    entry = await _setup_entry(hass, monkeypatch)
+    mqtt_client = hass.data[DOMAIN][entry.entry_id]["mqtt"]
+
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"mysair_mqtt_status_{entry.entry_id}")
+    assert entity_id is not None
+    assert hass.states.get(entity_id).state == "offline"
+
+    mqtt_client.connected = True
+    mqtt_client.last_message_at = dt_util.utcnow()
+    mqtt_client.parse_strict_count = 3
+    mqtt_client.parse_fallback_count = 1
+    mqtt_client.parse_error_count = 2
+    mqtt_client.total_reconnects = 4
+    await async_update_entity(hass, entity_id)
+
+    state = hass.states.get(entity_id)
+    assert state.state == "online"
+    assert state.attributes["last_update"] is not None
+    assert state.attributes["parse_strict_count"] == 3
+    assert state.attributes["parse_fallback_count"] == 1
+    assert state.attributes["parse_error_count"] == 2
+    assert state.attributes["total_reconnects"] == 4
