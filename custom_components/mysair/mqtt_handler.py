@@ -2,6 +2,7 @@ import time
 import json
 import hmac
 import hashlib
+import random
 import struct
 import secrets
 import datetime
@@ -192,6 +193,23 @@ def build_feedback_topic(base_topic, mqtt_user):
     return f"{base}get/usr/{mqtt_user}/feedback"
 
 
+def compute_backoff_delay(attempt, base=10, max_delay=120, jitter_fraction=0.2, rng=None):
+    """Retraso de reconexión con backoff exponencial y jitter (E3).
+
+    ``attempt`` empieza en 0 para el primer reintento tras una conexión
+    lograda (CONNACK). El backoff exponencial (``base * 2**attempt``,
+    limitado a ``max_delay``) se aplica solo a desconexiones **no
+    planificadas**; el refresco proactivo de credenciales (ver
+    ``_on_credential_refresh_due``) sigue reconectando sin espera. El jitter
+    (±``jitter_fraction``) evita que varias instalaciones/hilos reintenten
+    todos a la vez tras un fallo compartido (p. ej. un blip de red general).
+    """
+    rng = rng or random
+    delay = min(base * (2 ** attempt), max_delay)
+    jitter = delay * jitter_fraction
+    return max(delay + rng.uniform(-jitter, jitter), 0)
+
+
 # ==========================================================
 # 🌐 Cliente principal MySair MQTT
 # ==========================================================
@@ -204,7 +222,9 @@ class MySairMQTTClient:
         self.message_callback = message_callback
         self.stop_event = threading.Event()
         self._thread = None
-        self._reconnect_delay = 10
+        self._reconnect_delay = 10  # base del backoff exponencial (E3)
+        self._max_reconnect_delay = 120
+        self._reconnect_attempt = 0
         self.ws = None
         self.connected = False
         self._base_topic = None  # aws_base_topic, se fija al conectar
@@ -282,8 +302,12 @@ class MySairMQTTClient:
 
                 aws = self.api.aws_credentials
                 if not aws:
-                    log("❌ [MySair MQTT] No se pudieron obtener credenciales AWS.", "error")
-                    time.sleep(self._reconnect_delay)
+                    delay = compute_backoff_delay(
+                        self._reconnect_attempt, base=self._reconnect_delay, max_delay=self._max_reconnect_delay
+                    )
+                    log(f"❌ [MySair MQTT] No se pudieron obtener credenciales AWS. Reintentando en {delay:.1f}s.", "error")
+                    self._reconnect_attempt += 1
+                    time.sleep(delay)
                     continue
 
                 # Datos AWS / MQTT
@@ -327,13 +351,19 @@ class MySairMQTTClient:
 
             # Esperar antes de reintentar, salvo que sea un refresco
             # proactivo planificado (credenciales ya frescas: reconectar ya).
+            # Las desconexiones no planificadas usan backoff exponencial con
+            # jitter (E3), que se reinicia en el próximo CONNACK logrado.
             if not self.stop_event.is_set():
                 if self._planned_reconnect:
                     log("🔁 [MySair MQTT] Reconectando de inmediato (refresco proactivo de credenciales)...")
                     self._planned_reconnect = False
                 else:
-                    log("🔁 [MySair MQTT] Reintentando conexión en 10 segundos...")
-                    time.sleep(self._reconnect_delay)
+                    delay = compute_backoff_delay(
+                        self._reconnect_attempt, base=self._reconnect_delay, max_delay=self._max_reconnect_delay
+                    )
+                    log(f"🔁 [MySair MQTT] Reintentando conexión en {delay:.1f}s (intento {self._reconnect_attempt + 1})...")
+                    self._reconnect_attempt += 1
+                    time.sleep(delay)
 
     # ----------------------------------------------------------
     # 📡 Callbacks WebSocket
@@ -355,6 +385,7 @@ class MySairMQTTClient:
             if message.startswith(b"\x20"):
                 log("✅ [MySair MQTT] CONNACK recibido, suscribiendo a topics...")
                 self.connected = True
+                self._reconnect_attempt = 0  # conexión lograda: reinicia el backoff (E3)
                 packet_id = 1
                 for ref in self.installation_refs:
                     topic = build_status_topic(self._base_topic, ref)

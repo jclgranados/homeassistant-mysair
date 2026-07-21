@@ -51,11 +51,11 @@ Lint y CI todavía no están configurados. Tests, sí, en dos niveles:
 # Tests P0/P1 (NO requieren Home Assistant, Python 3.9+, en la máquina local)
 python -m venv .venv-test && source .venv-test/bin/activate
 pip install -r requirements-test.txt
-pytest                      # ~89 tests: parser, builders MQTT, firma SigV4, cliente HTTP
+pytest                      # 126 tests: parser, builders MQTT, firma SigV4, cliente HTTP
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 166 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto)
+docker compose run --rm test-ha    # 180 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics)
 
 # Lint / formato (recomendado: ruff; aún no configurado en el repo)
 ruff check custom_components/mysair tests
@@ -93,6 +93,10 @@ Los tests y la documentación están en la raíz del repo.
 | `switch.py` | `MySairSwitch` (power on/off) |
 | `config_flow.py` | Config flow (email + password) |
 | `const.py` | Constantes (algunas sin uso: `HVAC_MODES` con `auto`, `SCAN_INTERVAL`) |
+| `diagnostics.py` | Volcado de diagnóstico descargable desde la UI de HA, redactando credenciales/tokens (D1) |
+| `services.yaml` | Esquema de UI del servicio `mysair.stop_installation` (F5) |
+| `strings.json` | Textos del config flow y del servicio en inglés (referencia/fallback de HA) (C4) |
+| `translations/es.json` | Traducción al español del config flow y del servicio (C4) |
 | `manifest.json` | Manifiesto (`requirements`: solo `requests` y `websocket-client`) |
 
 | Raíz del repo | Rol |
@@ -234,10 +238,15 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **Causa raíz de las desconexiones MQTT "sistemáticas"** (2026-07-20): nunca refrescábamos la sesión MQTT *antes* de que caducaran las credenciales AWS, solo al reconectar después de que AWS ya la hubiera cortado — de ahí el patrón regular. Corregido con refresco proactivo (`api.seconds_until_aws_credentials_expire` + timer en `mqtt_handler`), igual que hace la app oficial. Además, el aviso de "sin confirmación MQTT" ahora distingue si fue por desconexión o con MQTT activo. **Verificado en producción**: el usuario confirma que las caídas ya no ocurren. Ver `docs/execution-plan.md` Tarea 20.
 - ✅ **E7 completo:** si no llega confirmación de un comando a tiempo, se revierte el estado optimista (temperatura/modo/fan_mode/switch) al último valor conocido; se descarta el revert si llega un status real antes. Ver Tarea 21.
 - ✅ **E1 (parser MQTT conforme al estándar, `known-unknowns` #6):** investigando el "carácter fantasma" antes del topic en los logs se encontró que era el byte bajo del campo de longitud MQTT estándar (confirmado por coincidencia exacta de longitud entre dos capturas reales), no un envoltorio de la app. `mqtt_handler.parse_mqtt_publish` decodifica el frame conforme al estándar como método primario, con la heurística de texto anterior como fallback si no es concluyente. Ver Tarea 21.
+- ✅ **E3 (backoff con jitter):** `mqtt_handler.compute_backoff_delay` sustituye la espera fija de 10 s por un backoff exponencial (tope 120 s) con jitter ±20%; se resetea al reconectar con éxito. Los reconectes planificados (refresco de credenciales) siguen sin esperar. Ver Tarea 22.
+- ✅ **D1 (diagnostics.py):** volcado descargable desde la UI de HA con instalaciones, devices y estado del cliente MQTT, redactando tokens/credenciales AWS. Ver Tarea 22.
+- ✅ **F5 (servicio `mysair.stop_installation`):** detiene una instalación completa con un comando en vez de apagar zona por zona; registrado una vez por dominio y retirado al descargar la última entrada. Ver Tarea 22.
+- ✅ **C4 (traducciones):** `strings.json` (inglés, referencia/fallback) + `translations/es.json` para el config flow (pasos, errores, abort) y el servicio `mysair.stop_installation`. Alcance deliberado: no incluye nombres de entidad (`climate`/`sensor`/`switch` siguen hardcodeados en español) — migrarlos a `has_entity_name`/`translation_key` cambiaría el nombre visible de entidades ya instaladas, se descartó por el riesgo frente al valor. Ver Tarea 23.
 
 Pendientes:
-- 🟡 **Parser de frame MQTT robusto** (#6): decodificar la cabecera MQTT real (longitud de topic, packet id) en vez de heurísticas de texto — sigue pendiente aunque el bug concreto del topic ya se corrigió.
 - 🟡 **Reload, reintento tras 401 en comando, mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P2/P3 pendiente; los duplicados de `feedback` vistos en producción encajan aquí).
+- 🟡 **Campos de zona sin interpretar** (`vf`, `hmh`, `mh`, `p`, `ps`): búsqueda exhaustiva en el bundle JS sin encontrar referencias — quedan sin interpretar por la regla de no inventar campos (ver `docs/known-unknowns.md`). (`sv` se resolvió el 2026-07-21: es el estado de suelo radiante encendido/apagado, `setFloor` en el bundle — un intento de búsqueda anterior no lo había encontrado, no es que el campo no exista.)
+- 🟡 **`quality_scale: silver`** sigue retirado del manifiesto: aunque C4 cubre las traducciones, falta el icono de marca en `home-assistant/brands` (PR a un repo externo) para que reclamarlo esté justificado por el propio criterio del proyecto (ver `docs/execution-plan.md` Tarea 11/23).
 
 Decisiones de alcance (no son bugs):
 - **Solo primera `Location`** (#15) — soportar varias `Location` queda deliberadamente fuera de alcance.

@@ -38,7 +38,7 @@
 | C1 | Introducir un **almacén central / coordinador** de estado por zona en vez del fan-out por event bus. | 🟡 |
 | C2 | Añadir `unique_id` a la config entry (`async_set_unique_id`) para evitar duplicados. | ✅ Hecho |
 | C3 | **Reauth flow** (`async_step_reauth`) y uso de `ConfigEntryAuthFailed`/`ConfigEntryNotReady`. | ✅ Hecho |
-| C4 | `translations/` + `strings.json` (config flow, entidades). | 🟡 |
+| C4 | `translations/` + `strings.json` (config flow, servicios). | ✅ Hecho — `strings.json` (inglés, referencia/fallback) + `translations/es.json`; cubre pasos del config flow (`user`/`reauth_confirm`), errores, abort reasons y el servicio `mysair.stop_installation`. **Alcance deliberado:** no incluye nombres de entidad (`climate`/`sensor`/`switch` siguen con nombres hardcodeados en español) — eso requeriría migrar a `has_entity_name`/`translation_key`, un cambio de mayor alcance que cambiaría el nombre visible de entidades ya instaladas; queda fuera de esta tarea. |
 | C5 | `_attr_should_poll = False` explícito; `available` basado en frescura de datos MQTT. | ✅ Hecho |
 | C6 | Sustituir `datetime.utcnow()` por `datetime.now(timezone.utc)` en la firma SigV4. | ✅ Hecho |
 | C7 | Revisar `FlowResult`→`ConfigFlowResult` y otras deprecaciones de la versión objetivo. | ✅ Hecho |
@@ -50,7 +50,7 @@
 
 | # | Tarea | Prio |
 |---|---|---|
-| D1 | `diagnostics.py` con `async_redact_data` (sin exponer credenciales). | 🟡 |
+| D1 | `diagnostics.py` con `async_redact_data` (sin exponer credenciales). | ✅ Hecho — vuelca entry data, instalaciones, devices, sesión API y estado del cliente MQTT; redacta tokens/credenciales (email, password, refresh/access token, credenciales AWS). |
 | D2 | Redacción de logs sensibles (URL firmada, tokens) y niveles coherentes (INFO→DEBUG). | 🟡 |
 | D3 | Sensor/atributo de estado de conexión MQTT (online/offline) y última actualización. | 🟢 |
 | D4 | Métricas de reconexión y errores de parsing para depuración. | 🟢 |
@@ -63,10 +63,10 @@
 |---|---|---|
 | E1 | Parser MQTT robusto: decodificar la cabecera MQTT real (longitud de topic, packet id) en vez de `split`/`{...}`. | ✅ Hecho (`known-unknowns` #6 resuelto) — usado como método primario con fallback a la heurística anterior si no es concluyente. |
 | E2 | Manejo de frames parciales / múltiples paquetes por frame WS. | 🟡 |
-| E3 | Backoff exponencial con jitter en reconexión (hoy fijo 10 s). | 🟡 |
+| E3 | Backoff exponencial con jitter en reconexión (hoy fijo 10 s). | ✅ Hecho — `compute_backoff_delay` (base 10 s, tope 120 s, jitter ±20%); se resetea el contador de intentos al reconectar (CONNACK) y los reconectes planificados (refresco de credenciales) siguen sin espera. |
 | E4 | Validación de esquema de payloads (rechazar/loguear los inesperados). | 🟡 |
 | E5 | Evaluar `client_id` propio distinto del de la app oficial para evitar expulsiones (`known-unknowns` #20). | ✅ Hecho |
-| E6 | Evaluar migrar a `paho-mqtt` (ya declarado) sobre WebSocket con SigV4, reduciendo código artesanal. | 🟡 |
+| E6 | Evaluar migrar a `paho-mqtt` sobre WebSocket con SigV4, reduciendo código artesanal. Nota: se eliminó de `requirements` en A4 por no usarse; volver a añadirlo si se retoma esta tarea. | 🟡 |
 | E7 | Reconciliación de estado optimista con timeout (revertir si no llega confirmación MQTT). | ✅ Hecho — suscripción a `feedback`, correlación por `orderId`, y revert del estado optimista (temperatura/modo/fan_mode/switch) si no llega confirmación a tiempo; se descarta si llega un status real antes. |
 
 ---
@@ -79,7 +79,7 @@
 | F2 | Exponer velocidad de ventilador (`fanspeed`/`vv`). Desbloqueado: mapeo confirmado en el componente real de la app (`known-unknowns` #24, `protocol-findings.md §9`) — `vv`: `"0"`=sin modo, `"1"/"2"/"3"`=manual, `"4"`=auto. | ✅ Hecho |
 | F3 | Modo `auto` si el sistema lo soporta (hoy `const.HVAC_MODES` lo lista pero climate no). | 🟢 |
 | F4 | `select` de modo reescrito y funcional. | 🟢 |
-| F5 | Servicios propios: `mysair.stop_installation` (comando `stop`, ya documentado, `value:"1"`) si aporta valor sobre apagar zona por zona. | 🟢 |
+| F5 | Servicios propios: `mysair.stop_installation` (comando `stop`, ya documentado, `value:"1"`) si aporta valor sobre apagar zona por zona. | ✅ Hecho — `api.send_installation_command(ctl, "stop"/"status")`; servicio registrado una vez por dominio (compartido entre config entries) y retirado al descargar la última. |
 | F6 | Temporizador (`temporizer`) y programas (`programs`) — mucho más trabajo (entidades nuevas fuera de climate/sensor/switch) y valores de parámetros sin confirmar. Más especulativo de la lista. | 🟢 |
 
 ---
@@ -98,6 +98,6 @@
 
 ## Secuencia recomendada de arranque
 
-~~A1 → A2 → A4 → A3 (estabilizar y limpiar) → A5/A6/A7 (requiere validación de protocolo) → B1–B3 (red de seguridad de tests)~~ — Fases A y B completas. No abordar E1/E2 sin haber respondido las incógnitas de `docs/known-unknowns.md` (#6, requiere dump real).
+~~A1 → A2 → A4 → A3 (estabilizar y limpiar) → A5/A6/A7 (requiere validación de protocolo) → B1–B3 (red de seguridad de tests)~~ — Fases A y B completas. `docs/known-unknowns.md` #6 (formato de frame MQTT, bloqueaba E1/E2) ya está resuelto — ninguna fila de esa tabla sigue marcada con riesgo 🔴 a día de hoy.
 
-**Estado real (2026-07-20):** Fases A, B, C2/C3/C8, G completas. Quedan: C1, C4, C5, C6, C7 (modernización menor); D1-D4 (observabilidad); E1-E4, E6, E7-parte-2 (robustez, algunas bloqueadas por incógnitas de protocolo); F2 (bloqueado), F3, F5, F6.
+**Estado real (2026-07-20):** Fases A, B, C2/C3/C4/C5/C6/C7/C8, G completas. Quedan: C1 (modernización mayor); D2-D4 (observabilidad); E2, E4, E6 (robustez); F3, F6.

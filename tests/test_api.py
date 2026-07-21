@@ -247,6 +247,40 @@ def test_send_zone_command_missing_params_raises(fake_session):
         _api(fake_session).send_zone_command("", "DEV", "power")
 
 
+# --- send_installation_command (F5, servicio stop_installation) ---
+
+def test_send_installation_command_stop(fake_session, make_response):
+    fake_session.queue("post", _creado(make_response))
+    _api(fake_session).send_installation_command("INST", "stop")
+    body = fake_session.calls[-1]["json"][0]
+    assert body == {
+        "sender": "WEB",
+        "ctl": "INST",
+        "app": "web0077",
+        "device": "",
+        "command": "stop",
+        "value": "1",
+    }
+
+
+def test_send_installation_command_status(fake_session, make_response):
+    fake_session.queue("post", _creado(make_response))
+    _api(fake_session).send_installation_command("INST", "status")
+    body = fake_session.calls[-1]["json"][0]
+    assert body["command"] == "status"
+    assert body["value"] == "sync"
+
+
+def test_send_installation_command_invalid_type_raises(fake_session):
+    with pytest.raises(ValueError):
+        _api(fake_session).send_installation_command("INST", "bogus")
+
+
+def test_send_installation_command_missing_ctl_raises(fake_session):
+    with pytest.raises(ValueError):
+        _api(fake_session).send_installation_command("", "stop")
+
+
 # --- extract_order_id (E7, confirmación de comandos) ---
 
 def test_extract_order_id_ok():
