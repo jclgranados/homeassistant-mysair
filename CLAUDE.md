@@ -50,19 +50,20 @@ Detalle completo: `docs/architecture.md`. **Los comandos van por HTTP, el estado
 
 ## 3. Comandos
 
-Lint y CI todavía no están configurados. Tests, sí, en dos niveles:
+Tests y lint configurados en CI (`.github/workflows/tests.yml`, 4 jobs independientes: `pure-tests`, `ha-harness-tests`, `hassfest`, `ruff`):
 
 ```bash
 # Tests P0/P1 (NO requieren Home Assistant, Python 3.9+, en la máquina local)
 python -m venv .venv-test && source .venv-test/bin/activate
 pip install -r requirements-test.txt
-pytest                      # 126 tests: parser, builders MQTT, firma SigV4, cliente HTTP
+pytest                      # 157 tests: parser, builders MQTT, firma SigV4, cliente HTTP
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 226+ tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona + sensor de conexión MQTT + reensamblado de frames + validación de payloads + control de suelo radiante)
+docker compose run --rm test-ha    # 229 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona + sensor de conexión MQTT + reensamblado de frames + validación de payloads + control de suelo radiante + reload/multi-instalación/topología)
 
-# Lint / formato (recomendado: ruff; aún no configurado en el repo)
+# Lint / formato (ruff, config en pyproject.toml — reglas por defecto únicamente)
+pip install -r requirements-lint.txt
 ruff check custom_components/mysair tests
 ruff format custom_components/mysair tests
 ```
@@ -109,6 +110,7 @@ Los tests y la documentación están en la raíz del repo.
 |---|---|
 | `tests/` | Tests P0/P1 (no requieren HA) + `conftest.py` con fixtures sanitizadas |
 | `pytest.ini`, `requirements-test.txt` | Configuración y dependencias de test |
+| `pyproject.toml`, `requirements-lint.txt` | Config de `ruff` (reglas por defecto) y su dependencia pinned |
 | `docs/` | Documentación de arquitectura, protocolos, dominio, tests, seguridad |
 | `hacs.json` | Metadatos para instalar el repo como repositorio personalizado de HACS |
 | `README.md` | Instalación, configuración, entidades, limitaciones (cara pública del proyecto) |
@@ -187,7 +189,7 @@ Los tests y la documentación están en la raíz del repo.
 ## 9. Checklist antes de un COMMIT
 
 - [ ] Sin credenciales, tokens ni capturas reales en el diff.
-- [ ] `ruff check` y `ruff format` limpios (si el entorno los tiene).
+- [ ] `ruff check` y `ruff format` limpios (job `ruff` en CI, ver §3).
 - [ ] Tests relevantes pasan (`pytest`), o se explica por qué no aplica.
 - [ ] Documentación en `docs/` actualizada si cambió el protocolo o la arquitectura.
 - [ ] Si añadiste plataforma: está en `PLATFORMS`.

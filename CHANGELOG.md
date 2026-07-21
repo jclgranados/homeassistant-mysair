@@ -6,6 +6,15 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.11.1] - 2026-07-21
+
+### Added
+- `ruff` (lint + formato) configurado y añadido a CI como un 4º job independiente (`pyproject.toml`, `requirements-lint.txt`).
+- 3 tests nuevos sin necesitar una captura real de producción: reload de la config entry (sin duplicar entidades ni el servicio compartido), varias instalaciones en una misma cuenta, y cambio de topología (documenta que una zona eliminada queda huérfana en el registro de entidades, sin limpieza automática).
+
+### Fixed
+- Eliminados 3 imports y 1 variable local sin usar (`api.py`, `config_flow.py`, `mqtt_handler.py`), sin cambio de comportamiento.
+
 ## [2.11.0] - 2026-07-21
 
 ### Added
