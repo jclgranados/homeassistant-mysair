@@ -123,18 +123,17 @@ classDiagram
 
 | Concepto | Campo | Estado en la integración |
 |---|---|---|
-| Suelo radiante vs AC | `m` ({2,3,4,5}=suelo) + capacidad `s` | Parseado (`is_floor`/`allow_floor`); sin entidad dedicada |
-| Velocidad del ventilador | `vv` + capacidad `v` + comando `fanspeed` | Parseado (`fan_mode`/`allow_fan`); sin entidad |
-| Humedad | `hm` | Parseada (`humidity`); sin sensor |
-| Temporizador | `tzv` + capacidad `tz` + comando `temporizer` | No implementado |
+| Suelo radiante vs AC | `m` ({2,3,4,5}=suelo) + capacidad `s` + `sv` (encendido/apagado) | ✅ **Implementado (F4, 2026-07-21):** `switch.py` → `MySairFloorSwitch`, reutiliza el comando `mode` recalculando `m` (`compute_mode_value`) |
+| Velocidad del ventilador | `vv` + capacidad `v` + comando `fanspeed` | ✅ Implementado (F2) |
+| Humedad | `hum` (fallback `hm`) | ✅ Implementado (F1) |
 | Standby | `e=="2"` | ✅ Mapeado a `HVACAction.IDLE` |
-| Programas / escenas | capacidad `hp` + comando `programs` | No implementado |
 
 ## 6b. Conceptos aún ausentes o no confirmados
 
 | Concepto | Estado | Nota |
 |---|---|---|
-| Modo `auto` | Parcial | `const.HVAC_MODES` incluye `auto` pero climate no lo soporta. |
+| Modo `auto` | 🟢 **Evaluado (F3, 2026-07-21) — sin soporte de protocolo:** `m` (0-5) cubre exactamente las 6 combinaciones AC/suelo × calor/frío, sin hueco para un modo de cambio automático. `const.HVAC_MODES` (con `"auto"`) era código muerto sin ningún consumidor; eliminado. El único "auto" real del protocolo es la velocidad de ventilador (`vv="4"`, ya implementado en F2). |
+| Temporizador / Programas | 🟢 **Descartado por decisión de alcance (F6, 2026-07-21):** solo el nombre de los comandos (`temporizer`, `programs`) está confirmado en el bundle; la forma del payload para *fijar* un temporizador o programa nunca se decodificó, y no existe ni un `setPrograms` de escritura. Implementarlo exigiría inventar campos. Ver `known-unknowns.md` #27. |
 | Online/offline por zona | **Desconocido** | Sin `available`; existe `isOutService` en la app (sin confirmar campo). |
 | Errores del dispositivo | **Desconocido** | No modelados. |
 | Controlador como device | No modelado | `via_device` apuntaba a un device inexistente (select.py eliminado). |

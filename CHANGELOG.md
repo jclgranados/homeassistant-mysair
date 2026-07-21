@@ -6,6 +6,17 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-07-21
+
+### Added
+- Control de suelo radiante por zona: nuevo switch (uno por zona con esa capacidad) para encender/apagar el suelo, independiente del switch de encendido general. Reutiliza el comando `mode` ya existente (recalcula el valor internamente preservando el modo calor/frío y el estado de AC actuales) — no requiere ningún comando nuevo del backend. La entidad aparece como "no disponible" en zonas sin capacidad de suelo.
+
+### Removed
+- `const.HVAC_MODES` (incluía un modo `"auto"` sin ningún soporte real en el sistema ni consumidor en el código — código muerto).
+
+### Evaluado (sin cambios de código)
+- Temporizador y programas por horario: no se implementan. El backend no expone ninguna forma confirmada de fijarlos (solo de leerlos), y adivinar el formato no es una opción responsable. Se retomará si en el futuro aparece evidencia real (p. ej. una captura de una instalación con temporizador configurado).
+
 ## [2.9.0] - 2026-07-21
 
 ### Added

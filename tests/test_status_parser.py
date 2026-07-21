@@ -7,7 +7,13 @@ Semántica confirmada desde la app oficial (docs/protocol-findings.md):
 
 import pytest
 
-from status_parser import parse_mode, parse_status_payload, parse_status_value, parse_feedback_payload
+from status_parser import (
+    compute_mode_value,
+    parse_mode,
+    parse_status_payload,
+    parse_status_value,
+    parse_feedback_payload,
+)
 
 
 # --- parse_status_value ---
@@ -62,6 +68,35 @@ def test_parse_mode_none():
 
 def test_parse_mode_non_numeric():
     assert parse_mode("x") == ("x", None, None, None, None)
+
+
+# --- compute_mode_value (F4, inversa de parse_mode) ---
+
+@pytest.mark.parametrize(
+    "is_heat,is_ac,is_floor,expected",
+    [
+        (True, True, False, "0"),   # AC calor
+        (False, True, False, "1"),  # AC frío
+        (True, False, True, "2"),   # suelo calor
+        (False, False, True, "3"),  # suelo frío
+        (True, True, True, "4"),    # AC+suelo calor
+        (False, True, True, "5"),   # AC+suelo frío
+    ],
+)
+def test_compute_mode_value_matches_confirmed_table(is_heat, is_ac, is_floor, expected):
+    assert compute_mode_value(is_heat, is_ac, is_floor) == expected
+
+
+def test_compute_mode_value_roundtrips_with_parse_mode():
+    for m in ("0", "1", "2", "3", "4", "5"):
+        _, is_heat, _, is_ac, is_floor = parse_mode(m)
+        assert compute_mode_value(is_heat, is_ac, is_floor) == m
+
+
+def test_compute_mode_value_forces_ac_when_neither_medium_active():
+    # Combinación que la app nunca genera: se fuerza AC=True en vez de
+    # enviar un 'm' nunca visto en el bundle.
+    assert compute_mode_value(is_heat=True, is_ac=False, is_floor=False) == "0"
 
 
 # --- parse_status_payload ---
