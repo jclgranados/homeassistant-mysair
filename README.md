@@ -1,6 +1,6 @@
 # MySair para Home Assistant
 
-Integración **no oficial** de Home Assistant para el sistema de zonificación de aire acondicionado **MySair**, construida por ingeniería inversa de la app web oficial (API HTTP + AWS IoT MQTT). No está afiliada ni respaldada por MySair.
+Integración **no oficial** de Home Assistant para el sistema de zonificación de climatización **MySair** (aire acondicionado y/o suelo radiante, por zona), construida por ingeniería inversa de la app web oficial (API HTTP + AWS IoT MQTT). No está afiliada ni respaldada por MySair.
 
 > ⚠️ **No oficial.** El protocolo no está documentado públicamente por el fabricante; puede romperse sin aviso si MySair cambia su backend. Úsala bajo tu propio riesgo. Ver [`docs/known-unknowns.md`](docs/known-unknowns.md) para las incógnitas abiertas del protocolo.
 
@@ -8,7 +8,7 @@ Integración **no oficial** de Home Assistant para el sistema de zonificación d
 
 - **Descubre** la topología de tu cuenta: `Location → Installation → Device (zona)`.
 - Recibe el **estado en tiempo real** (temperatura, consigna, modo, encendido) por MQTT sobre WebSocket (AWS IoT), con un refresco de respaldo por HTTP cada 2 minutos.
-- Permite **controlar** cada zona (encendido/apagado, modo calor/frío, temperatura consigna) desde Home Assistant.
+- Permite **controlar** cada zona (encendido/apagado, modo calor/frío, temperatura consigna, y suelo radiante si la zona lo tiene) desde Home Assistant.
 
 ## Entidades por zona
 
@@ -16,10 +16,17 @@ Integración **no oficial** de Home Assistant para el sistema de zonificación d
 |---|---|---|
 | `climate.<zona>` | Climate | Termostato: encendido/apagado, modo calor/frío (según disponibilidad real de la zona), temperatura objetivo, min/max reales, velocidad de ventilador (manual 1-3 o automático, si la zona lo soporta) |
 | `switch.<zona>` | Switch | Encendido/apagado, preservando el último modo usado |
+| `switch.<zona>_suelo` | Switch | Suelo radiante encendido/apagado, combinable con el AC de la misma zona. Aparece como "no disponible" en zonas sin esa capacidad |
 | `sensor.<zona>_temperatura_actual` | Sensor | Temperatura actual de la zona |
 | `sensor.<zona>_temperatura_consigna` | Sensor | Temperatura objetivo (setpoint) |
 | `sensor.<zona>_modo` | Sensor | Modo actual (`OFF`/`HEAT`/`COOL`) |
 | `sensor.<zona>_humedad` | Sensor | Humedad relativa de la zona |
+
+## Otras entidades
+
+| Entidad | Tipo | Descripción |
+|---|---|---|
+| `sensor.mysair_conexion_mqtt` | Sensor | Una por cuenta configurada: estado de la conexión MQTT (`online`/`offline`), hora de la última actualización recibida, y métricas de reconexión/parseo (para depuración) |
 
 ## Instalación
 
@@ -46,8 +53,8 @@ Ajustes → Dispositivos y servicios → Añadir integración → **MySair** →
 
 - **Las entidades tardan unos segundos en mostrar datos reales tras un arranque/recarga**: aparecen como "no disponible" hasta recibir el primer status por MQTT (y de nuevo si se pierde la conexión más de 6 minutos), en vez de mostrar valores por defecto como si fueran en tiempo real.
 - **Solo la primera `Location`** de la cuenta: si tienes varias ubicaciones, solo se cargan las instalaciones de la primera (decisión de alcance, ver `docs/known-unknowns.md` #15).
-- El **parser de frames MQTT crudos** es best-effort (no decodifica la cabecera MQTT completa); es robusto para el tráfico observado hasta ahora pero podría fallar ante formatos no vistos (`docs/known-unknowns.md` #6).
-- Sin **modo automático** (HVAC) todavía (protocolo parcialmente reverseado, ver `docs/protocol-findings.md`).
+- **Sin temporizador ni programas por horario**: el backend no expone ninguna forma confirmada de fijarlos (solo de leerlos); adivinar el formato no es una opción responsable (decisión de alcance, ver `docs/known-unknowns.md` #27).
+- **Sin modo automático (HVAC)**: no es una carencia de la integración — el protocolo en sí no tiene ningún modo de cambio automático calor/frío (ver `docs/protocol-findings.md` §4). El único "automático" real del sistema es la velocidad de ventilador, que sí está implementada.
 - Requiere Home Assistant **≥ 2025.10.0**.
 
 ## Documentación técnica
