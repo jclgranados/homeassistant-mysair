@@ -2,9 +2,13 @@
 
 > Documento originalmente escrito como propuesta antes de implementar nada; se
 > mantiene en presente/futuro como registro del razonamiento, con notas "✅
-> Implementado" donde ya existe. Estado actual real: **103 tests** (78 P0/P1
-> sin HA + 25 P2 con harness de HA vía Docker). Ver `docs/execution-plan.md`
-> Tareas 5, 12 y 13.
+> Implementado" donde ya existe. Estado actual real (2026-07-21): **226 tests**
+> (157 P0/P1 sin HA + 69 P2 con harness de HA vía Docker). Ver
+> `docs/execution-plan.md` (28 tareas) para el detalle completo de cada tanda;
+> las referencias puntuales de más abajo solo cubren las tareas que crearon
+> la cobertura original (5, 12, 13) y no se han mantenido actualizadas tarea
+> a tarea desde entonces — para "qué se implementó cuándo" usar
+> `execution-plan.md`, no este documento.
 
 ---
 
@@ -104,16 +108,19 @@ tests/
 
 ## 4. Casos de prueba priorizados
 
-### P0 — Funciones puras (sin HA, sin red)
+### P0 — Funciones puras (sin HA, sin red) — ✅ Implementado (`test_mqtt_builders.py`, `test_aws_sign.py`, `test_status_parser.py`)
 | Test | Qué valida | Notas |
 |---|---|---|
-| `encode_varint` | Codificación de longitudes (0, 127, 128, 16383, 16384) | Confirmable contra spec MQTT |
+| `encode_varint`/`decode_varint` | Codificación/decodificación de longitudes, roundtrip | Ampliado con `_next_packet_length` (E2, Tarea 26): distingue paquete incompleto de malformado |
 | `build_mqtt_connect` | Cabecera fija 0x10, flags 0xC2, keepalive 60, campos client/user/pass | Bytes exactos |
 | `build_mqtt_subscribe` | Cabecera 0x82, packet_id, topic, QoS 0 | Bytes exactos |
 | `aws_sign_url` (reloj fijo) | Estructura de la URL, presencia de `X-Amz-*`, firma determinista | `freezegun`; no valida contra AWS |
-| `parse_status_payload` (**tras extraer**) | `value` string→JSON, limpieza `;`, mapeo `t[]`→zonas, `e`→mode | Requiere refactor previo |
+| `parse_status_payload`/`parse_feedback_payload` | `value` string→JSON, limpieza `;`, mapeo `t[]`→zonas, `e`→mode, rechazo (`None`) de payloads no-dict (E4) | Extraído a `status_parser.py` (módulo puro, sin HA) |
+| `parse_mqtt_publish` | Decodificación conforme al estándar MQTT (remaining length + Topic Name + payload) | E1, con heurística de texto como respaldo |
+| `compute_mode_value` | Inversa de `parse_mode`: calcula `m` dado calor/frío + AC + suelo | F4, para el control de suelo radiante |
+| `compute_backoff_delay` | Backoff exponencial con jitter, tope, nunca negativo | E3 |
 
-### P1 — Cliente HTTP (`requests` mockeado)
+### P1 — Cliente HTTP (`requests` mockeado) — ✅ Implementado (`test_api.py`)
 | Test | Escenario |
 |---|---|
 | Login OK | 200 con `entity.access_token` → token asignado |
@@ -139,19 +146,20 @@ tests/
 | Reauth feliz | `async_step_reauth_confirm` → `refresh_token` actualizado, abort `reauth_successful` |
 | Reauth con credenciales inválidas | error `invalid_auth`, `refresh_token` no se toca |
 
-### P2 — MQTT (sin broker real)
-| Test | Escenario |
-|---|---|
-| CONNACK → SUBSCRIBE | Simular frame `0x20`; verificar SUBSCRIBE a `pro/v1/get/ctl/{ref}/#` por instalación |
-| SUBACK | Frame `0x90` → sin efectos secundarios |
-| PUBLISH status | Frame `0x30` con `(topic){json}` → callback recibe `{topic,payload}` |
-| Payload sin JSON | Frame sin `{` → warning, sin crash |
-| Payload con `;` final | Se limpia y parsea |
-| Reconexión | `on_close` → `connected=False` → reintento tras backoff (mock `sleep`) |
-| Resuscripción | Tras reconectar, re-SUBSCRIBE a todos los topics |
-| Mensaje duplicado | Dos `status` iguales → entidad no reescribe (comparación de valor) |
-| Mensaje fuera de orden | `status` con consigna vieja tras una nueva → documentar comportamiento actual (sobrescribe) |
-| Frame partido | (Documentar limitación: hoy no se soporta) |
+### P2 — MQTT (sin broker real) — mayormente ✅ Implementado (`test_mqtt_connection.py`, P0/P1 — no requiere HA pese al nombre "P2" original)
+| Test | Escenario | Estado |
+|---|---|---|
+| CONNACK → SUBSCRIBE | Simular frame `0x20`; verificar SUBSCRIBE a `pro/v1/get/ctl/{ref}/#` por instalación | ✅ Implementado |
+| SUBACK | Frame `0x90` → sin efectos secundarios | ✅ Implementado |
+| PUBLISH status | Frame `0x30` con `(topic){json}` → callback recibe `{topic,payload}` | ✅ Implementado |
+| Payload sin JSON | Frame sin `{` → warning, sin crash, contabilizado en `parse_error_count` (D4) | ✅ Implementado |
+| Payload con `;` final | Se limpia y parsea | ✅ Implementado |
+| Frame partido / multi-paquete | Paquete MQTT partido entre dos mensajes WS, o varios coalescidos en uno | ✅ Implementado (E2, Tarea 26) — con bytes sintéticos; **falta confirmar con una captura real de producción** |
+| `connected=False` en `on_close`, backoff puro | Componentes verificados por separado (`_on_close`, `compute_backoff_delay`) | ✅ Implementado |
+| Reconexión end-to-end | Ciclo completo `_run()`: `on_close` → espera con backoff → reconecta → CONNACK | 🟡 No testeado como flujo íntegro — `_run()` es un bucle bloqueante, difícil de testear sin arrancar hilos reales; solo sus piezas se prueban sueltas |
+| Resuscripción tras reconectar | Tras una reconexión, se vuelve a mandar SUBSCRIBE a todos los topics | 🟡 Se cumple por diseño (cada `_run()` repite CONNECT→CONNACK→SUBSCRIBE), pero sin un test dedicado que lo verifique como escenario de reconexión |
+| Mensaje duplicado | Dos `status` iguales → entidad no reescribe (comparación de valor) | 🔴 Pendiente |
+| Mensaje fuera de orden | `status` con consigna vieja tras una nueva → documentar comportamiento actual (sobrescribe) | 🔴 Pendiente |
 
 ### P2 — Ciclo de vida del setup (harness HA) — ✅ Implementado (`tests/test_init_setup_unload.py`)
 | Test | Escenario |
@@ -181,18 +189,20 @@ tests/
 | Test | Escenario |
 |---|---|
 | Reload | Sin tareas duplicadas |
-| Credenciales caducadas | 401 en comando → refresh y reintento |
 | Mensaje duplicado / fuera de orden | Ver tabla P3 más abajo |
 
+> ✅ **"Credenciales caducadas: 401 en comando → refresh y reintento"** ya está implementado y testeado
+> (`test_send_instruction_401_refreshes_and_retries` en `test_api.py`) — quitado de esta tabla.
+
 ### P3 — Escenarios avanzados / robustez
-| Test | Escenario |
-|---|---|
-| Payload incompleto | `t[]` sin `tr`/`tc` → usa `0.0` por defecto (documentar) |
-| Payload desconocido | Campos extra ignorados sin error |
-| Migración de config | `async_migrate_entry` (cuando exista VERSION>1) |
-| Cambio de topología | Zona nueva/eliminada entre reinicios → entidades huérfanas (documentar) |
-| Varios sistemas en una cuenta | 2 instalaciones → suscripción y entidades por cada una |
-| Sin ubicaciones | `get_locations` `[]` → setup `return False` |
+| Test | Escenario | Estado |
+|---|---|---|
+| Payload incompleto | `t[]` sin `tr`/`tc` → campo queda `None` (no `0.0`: corregido, la implementación real usa `_to_float` que devuelve `None` ante valores ausentes/no convertibles) | ✅ Implementado (comportamiento ya cubierto en `test_status_parser.py`) |
+| Payload desconocido | Campos extra ignorados sin error | ✅ Implementado (E4, Tarea 26): deliberadamente permisivo ante claves nuevas del backend, ver `known-unknowns.md` |
+| Migración de config | `async_migrate_entry` (cuando exista VERSION>1) | 🔴 Pendiente (no ha hecho falta todavía; la única migración real hasta ahora, A6, se hace a mano en `async_setup_entry`, no vía `async_migrate_entry`) |
+| Cambio de topología | Zona nueva/eliminada entre reinicios → entidades huérfanas (documentar) | 🔴 Pendiente |
+| Varios sistemas en una cuenta | 2 instalaciones → suscripción y entidades por cada una | 🔴 Pendiente (validado manualmente en producción con 1 instalación; multi-instalación dentro de una misma `Location` no tiene test dedicado) |
+| Sin ubicaciones | `get_locations` `[]` → setup `return False` | ✅ Implementado (`test_init_setup_unload.py`, aunque el comportamiento real hoy es `ConfigEntryNotReady`, no `return False`) |
 
 ---
 
