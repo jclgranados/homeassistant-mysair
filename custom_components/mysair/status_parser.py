@@ -93,17 +93,40 @@ def parse_status_payload(payload):
     ``temp_actual``, ``temp_target``, ``temp_min``, ``temp_max``, ``humidity``,
     ``power`` (e crudo), ``is_on``, ``is_standby``, ``mode_raw``, ``is_heat``,
     ``is_cool``, ``is_ac``, ``is_floor``, ``fan_mode`` y flags ``allow_*``.
+
+    Validación (E2/E4): un ``payload`` que no sea ni siquiera un ``dict`` se
+    **rechaza** devolviendo ``None`` (en vez de un dict "vacío" que de todas
+    formas no hace nada aguas abajo). El resto de formas inesperadas (``ctl``
+    ausente, ``t`` con una forma que no es una lista, una zona sin ``rf``) se
+    degradan de forma segura como hasta ahora, pero ahora quedan
+    **logueadas** para poder depurarlas — deliberadamente no se rechazan
+    claves adicionales desconocidas del payload (permisivo ante campos
+    nuevos del backend, ver `docs/known-unknowns.md`).
     """
     if not isinstance(payload, dict):
-        return {"ctl": None, "zones": []}
+        _LOGGER.warning(
+            "[MySair] status: payload no es un dict (%s), se rechaza el mensaje", type(payload).__name__
+        )
+        return None
 
     ctl_ref = payload.get("ctl")
+    if ctl_ref is None:
+        _LOGGER.warning("[MySair] status: payload sin 'ctl', el mensaje quedará sin destinatario")
     parsed_value = parse_status_value(payload.get("value", ""))
 
+    t_list = parsed_value.get("t", [])
+    if not isinstance(t_list, list):
+        _LOGGER.warning(
+            "[MySair] status: campo 't' con forma inesperada (%s), se ignora", type(t_list).__name__
+        )
+        t_list = []
+
     zone_states = []
-    for t in parsed_value.get("t", []):
+    for t in t_list:
         if not isinstance(t, dict):
             continue
+        if t.get("rf") is None:
+            _LOGGER.warning("[MySair] status: zona sin 'rf' (zone_id), se generará sin identificador")
         power = _to_str(t.get("e", "0"))
         mode_raw, is_heat, is_cool, is_ac, is_floor = parse_mode(t.get("m"))
         zone_states.append(
@@ -148,9 +171,18 @@ def parse_feedback_payload(payload):
 
     Devuelve ``{"order_id", "ctl", "raw"}``; ``order_id``/``ctl`` son ``None``
     si no se encuentran en ninguna de las dos formas.
+
+    Validación (E4): un ``payload`` que no sea un ``dict`` se rechaza
+    devolviendo ``None``. Si es un dict pero no se encuentra ``orderId``/
+    ``ctl`` en ninguna de las dos formas conocidas, se loguea (antes era
+    silencioso) pero se sigue devolviendo el dict con ``None``s, ya que la
+    forma general del mensaje sí se reconoció.
     """
     if not isinstance(payload, dict):
-        return {"order_id": None, "ctl": None, "raw": payload}
+        _LOGGER.warning(
+            "[MySair] feedback: payload no es un dict (%s), se rechaza el mensaje", type(payload).__name__
+        )
+        return None
 
     order_id = payload.get("orderId")
     ctl = payload.get("ctl")
@@ -161,5 +193,8 @@ def parse_feedback_payload(payload):
             order_id = nested.get("orderId")
         if ctl is None:
             ctl = nested.get("ctl", payload.get("ctl"))
+
+    if order_id is None and ctl is None:
+        _LOGGER.warning("[MySair] feedback: no se encontró 'orderId' ni 'ctl' (ni plano ni anidado)")
 
     return {"order_id": order_id, "ctl": ctl, "raw": payload}

@@ -172,7 +172,46 @@ def test_parse_status_payload_missing_value():
 
 
 def test_parse_status_payload_non_dict_input():
-    assert parse_status_payload(None) == {"ctl": None, "zones": []}
+    # E4: un payload que no es ni siquiera un dict se rechaza (None), en vez
+    # de devolver un dict "vacío" que de todas formas no hace nada aguas abajo.
+    assert parse_status_payload(None) is None
+
+
+def test_parse_status_payload_non_dict_input_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    parse_status_payload(None)
+    assert "no es un dict" in caplog.text
+
+
+def test_parse_status_payload_t_not_a_list_logs_warning_and_yields_no_zones(caplog):
+    caplog.set_level("WARNING")
+    payload = {"ctl": "X", "value": '{"t": 42}'}
+
+    result = parse_status_payload(payload)
+
+    assert result == {"ctl": "X", "zones": []}
+    assert "campo 't' con forma inesperada" in caplog.text
+
+
+def test_parse_status_payload_missing_ctl_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    payload = {"value": '{"t":[{"rf":"D1","e":"1","m":"0"}]}'}
+
+    result = parse_status_payload(payload)
+
+    assert result["ctl"] is None
+    assert "sin 'ctl'" in caplog.text
+
+
+def test_parse_status_payload_zone_missing_rf_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    payload = {"ctl": "X", "value": '{"t":[{"e":"1","m":"0"}]}'}
+
+    zones = parse_status_payload(payload)["zones"]
+
+    assert len(zones) == 1
+    assert zones[0]["zone_id"] is None
+    assert "zona sin 'rf'" in caplog.text
 
 
 def test_parse_status_payload_skips_non_dict_thermostats():
@@ -203,5 +242,19 @@ def test_parse_feedback_payload_missing_fields():
 
 
 def test_parse_feedback_payload_non_dict_input():
-    result = parse_feedback_payload("not-a-dict")
-    assert result == {"order_id": None, "ctl": None, "raw": "not-a-dict"}
+    # E4: rechazado (None) en vez de un dict con raw preservado.
+    assert parse_feedback_payload("not-a-dict") is None
+
+
+def test_parse_feedback_payload_non_dict_input_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    parse_feedback_payload("not-a-dict")
+    assert "no es un dict" in caplog.text
+
+
+def test_parse_feedback_payload_missing_order_id_and_ctl_logs_warning(caplog):
+    caplog.set_level("WARNING")
+    result = parse_feedback_payload({"unrelated": "field"})
+
+    assert result == {"order_id": None, "ctl": None, "raw": {"unrelated": "field"}}
+    assert "no se encontró" in caplog.text
