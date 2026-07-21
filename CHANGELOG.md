@@ -6,6 +6,11 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.11.2] - 2026-07-21
+
+### Added
+- Limpieza automática de entidades huérfanas: si una zona desaparece de la cuenta MySair entre un arranque/recarga y otro, su dispositivo y todas sus entidades (termostato, sensores, switches) se eliminan del registro de Home Assistant en vez de quedarse huérfanos para siempre.
+
 ## [2.11.1] - 2026-07-21
 
 ### Added

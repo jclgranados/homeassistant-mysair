@@ -324,12 +324,13 @@ async def test_setup_entry_multiple_installations(hass, monkeypatch):
     )  # sin status propio todavía
 
 
-async def test_topology_change_orphans_removed_zone_entity(hass, monkeypatch):
-    # No existe ninguna limpieza de entidades huérfanas (docs/testing-strategy.md
-    # lo documenta como pendiente, no como bug a corregir aquí): si una zona
-    # desaparece de get_devices() entre reinicios, su entidad se queda
-    # registrada mientras que la zona nueva sí se crea con normalidad. Este
-    # test fija el comportamiento actual tal cual es.
+async def test_topology_change_removes_orphaned_zone_device_and_entities(
+    hass, monkeypatch
+):
+    # _cleanup_stale_zone_devices (__init__.py): si una zona desaparece de
+    # get_devices() entre reinicios, su dispositivo (y todas sus entidades:
+    # climate + 4 sensores + 2 switches) se elimina del registro en vez de
+    # quedar huérfano para siempre; la zona nueva se crea con normalidad.
     _patch_happy_api(monkeypatch)
     monkeypatch.setattr(MySairMQTTClient, "stop", lambda self: None)
 
@@ -347,10 +348,10 @@ async def test_topology_change_orphans_removed_zone_entity(hass, monkeypatch):
     assert hass.states.get("climate.salon").state != "unavailable"
 
     registry = er.async_get(hass)
-    old_entity_id = registry.async_get_entity_id(
-        "climate", DOMAIN, "mysair_INST_A_DEV_1"
+    assert (
+        registry.async_get_entity_id("climate", DOMAIN, "mysair_INST_A_DEV_1")
+        == "climate.salon"
     )
-    assert old_entity_id == "climate.salon"
 
     # Cambio de topología: DEV_1 desaparece, aparece DEV_2 nueva.
     monkeypatch.setattr(
@@ -371,9 +372,12 @@ async def test_topology_change_orphans_removed_zone_entity(hass, monkeypatch):
     await hass.async_block_till_done()
     assert hass.states.get("climate.dormitorio").state != "unavailable"
 
-    # La entidad de la zona eliminada sigue registrada (huérfana): HA no
-    # borra automáticamente entidades que la integración deja de crear.
+    # El dispositivo y las entidades de la zona eliminada ya no existen.
     assert (
-        registry.async_get_entity_id("climate", DOMAIN, "mysair_INST_A_DEV_1")
-        == old_entity_id
+        registry.async_get_entity_id("climate", DOMAIN, "mysair_INST_A_DEV_1") is None
     )
+    assert (
+        registry.async_get_entity_id("sensor", DOMAIN, "mysair_temp_INST_A_DEV_1")
+        is None
+    )
+    assert hass.states.get("climate.salon") is None
