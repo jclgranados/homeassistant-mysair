@@ -114,7 +114,7 @@ class MySairTempSensor(AvailabilityMixin, SensorEntity):
             "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
             "name": f"{self.device_id.upper()} ({self.inst_ref})",
             "manufacturer": "MySair",
-            "model": "Zonificador de aire",
+            "model": "Zonificador de climatización",
             "sw_version": "v1.0",
         }
 
@@ -169,7 +169,7 @@ class MySairSetpointSensor(AvailabilityMixin, SensorEntity):
             "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
             "name": f"{self.device_id.upper()} ({self.inst_ref})",
             "manufacturer": "MySair",
-            "model": "Zonificador de aire",
+            "model": "Zonificador de climatización",
             "sw_version": "v1.0",
         }
 
@@ -222,7 +222,7 @@ class MySairModeSensor(AvailabilityMixin, SensorEntity):
             "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
             "name": f"{self.device_id.upper()} ({self.inst_ref})",
             "manufacturer": "MySair",
-            "model": "Zonificador de aire",
+            "model": "Zonificador de climatización",
             "sw_version": "v1.0",
         }
 
@@ -285,7 +285,7 @@ class MySairHumiditySensor(AvailabilityMixin, SensorEntity):
             "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
             "name": f"{self.device_id.upper()} ({self.inst_ref})",
             "manufacturer": "MySair",
-            "model": "Zonificador de aire",
+            "model": "Zonificador de climatización",
             "sw_version": "v1.0",
         }
 

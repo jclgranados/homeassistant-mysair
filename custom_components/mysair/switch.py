@@ -59,7 +59,7 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
             "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
             "name": f"{self.device_id.upper()} ({self.inst_ref})",
             "manufacturer": "MySair",
-            "model": "Zonificador de aire",
+            "model": "Zonificador de climatización",
             "sw_version": "v1.0",
         }
 
@@ -171,7 +171,7 @@ class MySairFloorSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
             "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
             "name": f"{self.device_id.upper()} ({self.inst_ref})",
             "manufacturer": "MySair",
-            "model": "Zonificador de aire",
+            "model": "Zonificador de climatización",
             "sw_version": "v1.0",
         }
 
