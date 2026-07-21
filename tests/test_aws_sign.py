@@ -12,7 +12,7 @@ import pytest
 pytest.importorskip("requests")
 freezegun = pytest.importorskip("freezegun")
 
-from api import MySairAPI
+from api import MySairAPI  # noqa: E402 (deliberado: necesita importorskip antes)
 
 
 FIXED = "2026-07-19T10:00:00Z"

@@ -17,7 +17,6 @@ from mqtt_handler import (
     build_client_id,
     build_status_topic,
     build_feedback_topic,
-    build_mqtt_subscribe,
     compute_backoff_delay,
     decode_varint,
     encode_varint,

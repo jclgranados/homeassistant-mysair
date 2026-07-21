@@ -3,7 +3,6 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .api import MySairAPI, MySairAuthError, MySairConnectionError

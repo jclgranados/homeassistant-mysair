@@ -452,7 +452,6 @@ class MySairAPI:
     @staticmethod
     def aws_sign_url(host, region, access_key, secret_key, token):
         """Genera una URL firmada para conexión MQTT AWS."""
-        method = "GET"
         service = "iotdevicegateway"
         algorithm = "AWS4-HMAC-SHA256"
         t = datetime.datetime.now(datetime.timezone.utc)

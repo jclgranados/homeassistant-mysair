@@ -1,7 +1,5 @@
 import time
 import json
-import hmac
-import hashlib
 import random
 import struct
 import secrets
@@ -9,7 +7,6 @@ import datetime
 import logging
 import threading
 import websocket
-import urllib.parse
 
 _LOGGER = logging.getLogger(__name__)
 
