@@ -6,6 +6,12 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-07-21
+
+### Added
+- Icono y logo de marca (`custom_components/mysair/brand/`), usando el mecanismo local de Home Assistant ≥2026.3.0 (sin PR externo a `home-assistant/brands`). Se muestran automáticamente en la UI de HA para quien tenga esa versión o superior.
+- `manifest.json` vuelve a declarar `quality_scale: "silver"` — pendiente de confirmar si `hassfest` lo acepta para una integración custom.
+
 ## [2.10.2] - 2026-07-21
 
 ### Added
