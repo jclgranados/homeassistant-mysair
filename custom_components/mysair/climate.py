@@ -12,6 +12,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .availability import AvailabilityMixin
 from .command_feedback import CommandFeedbackMixin
 from .const import DOMAIN
+from .device import zone_device_info
 from .coordinator import signal_zone_update
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,6 +55,10 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         | ClimateEntityFeature.FAN_MODE
     )
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    # El termostato es la entidad principal de la zona: sin nombre propio,
+    # hereda el del dispositivo (la zona). Ver device.py.
+    _attr_has_entity_name = True
+    _attr_name = None
 
     def __init__(self, hass, api, mqtt_client, inst_ref, device_id, name):
         self.hass = hass
@@ -62,7 +67,8 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         self.inst_ref = inst_ref
         self.device_id = device_id
         self._attr_unique_id = f"mysair_{inst_ref}_{device_id}"
-        self._attr_name = name
+        self._attr_device_info = zone_device_info(inst_ref, device_id, name)
+        self._zone_name = name  # solo para logs
         self._target_temperature = 22.0
         self._current_temperature = None
         self._hvac_mode = HVACMode.OFF
@@ -78,19 +84,9 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         self._init_command_feedback()
         self._init_availability()
 
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
-            "name": f"{self.device_id.upper()} ({self.inst_ref})",
-            "manufacturer": "MySair",
-            "model": "Zonificador de climatización",
-            "sw_version": "v1.0",
-        }
-
     async def async_added_to_hass(self):
         _LOGGER.debug(
-            f"[MySair Climate] 🧩 Entidad añadida: {self._attr_name} ({self.inst_ref}/{self.device_id})"
+            f"[MySair Climate] 🧩 Entidad añadida: {self._zone_name} ({self.inst_ref}/{self.device_id})"
         )
         self._unsub = async_dispatcher_connect(
             self.hass,
@@ -261,7 +257,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
     # ------------------------------------------------------------------
     @callback
     def _handle_zone_update(self, zone):
-        _LOGGER.debug(f"[MySair Climate] 📨 Evento recibido para {self._attr_name}")
+        _LOGGER.debug(f"[MySair Climate] 📨 Evento recibido para {self._zone_name}")
         self._mark_status_received()
         # Un status real es la verdad más fresca: descarta cualquier
         # comando pendiente de confirmar (y su revert), ya no hace falta.
@@ -307,7 +303,7 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
                 self._hvac_action = HVACAction.HEATING
 
         _LOGGER.debug(
-            f"[MySair Climate] 🔄 {self._attr_name}: {self._current_temperature}°C / "
+            f"[MySair Climate] 🔄 {self._zone_name}: {self._current_temperature}°C / "
             f"{self._target_temperature}°C / {self._hvac_mode}"
         )
         self.async_write_ha_state()

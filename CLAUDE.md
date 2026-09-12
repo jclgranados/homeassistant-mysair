@@ -56,11 +56,11 @@ Tests y lint configurados en CI (`.github/workflows/tests.yml`, 4 jobs independi
 # Tests P0/P1 (NO requieren Home Assistant, Python 3.9+, en la máquina local)
 python -m venv .venv-test && source .venv-test/bin/activate
 pip install -r requirements-test.txt
-pytest                      # 157 tests: parser, builders MQTT, firma SigV4, cliente HTTP
+pytest                      # 173 tests: parser, builders MQTT, firma SigV4, cliente HTTP
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 229 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona + sensor de conexión MQTT + reensamblado de frames + validación de payloads + control de suelo radiante + reload/multi-instalación/topología)
+docker compose run --rm test-ha    # 251 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona + sensor de conexión MQTT + reensamblado de frames + validación de payloads + control de suelo radiante + reload/multi-instalación/topología)
 
 # Lint / formato (ruff, config en pyproject.toml — reglas por defecto únicamente)
 pip install -r requirements-lint.txt
@@ -73,9 +73,11 @@ ruff format custom_components/mysair tests
   esos módulos como top-level (no ejecutan el `__init__.py` del paquete).
 - Los tests con **harness de HA** (`test_config_flow.py`, `test_init_setup_unload.py`,
   `test_entities.py`) requieren `homeassistant` + `pytest-homeassistant-custom-component`
-  (Python ≥3.12), instalados solo dentro de `Dockerfile.test` — no en el entorno local. PyPI no
-  publica `homeassistant` más reciente que `2025.1.4` (techo conocido del ecosistema, no de este
-  repo). Ver `docs/testing-strategy.md`.
+  (Python ≥3.14, que es lo que exige HA 2026.9), instalados solo dentro de `Dockerfile.test` —
+  no en el entorno local. **Mantener al día el pin de `pytest-homeassistant-custom-component`
+  en `requirements-test-ha.txt`**: llegó a quedarse en HA 2025.1.4 mientras en producción corría
+  2026.9, y con el harness 20 versiones por detrás las deprecaciones pasan desapercibidas.
+  Ver `docs/testing-strategy.md`.
 
 > ⚠️ **Nunca** ejecutes el código contra servidores reales de MySair para "probar".
 
@@ -92,6 +94,7 @@ Los tests y la documentación están en la raíz del repo.
 | `api.py` | `MySairAPI`: HTTP síncrono (`requests`, `session` inyectable) + firma AWS SigV4 |
 | `status_parser.py` | Parsers **puros** de `status` (`parse_status_payload`) y `feedback` (`parse_feedback_payload`), sin dependencia de HA |
 | `mqtt_handler.py` | `MySairMQTTClient`: MQTT crudo sobre WebSocket (`websocket-client`) |
+| `device.py` | `zone_device_info`/`account_device_info`: dispositivo compartido por las 7 entidades de una zona (antes duplicado en cada una). El nombre del dispositivo es el de la zona porque HA lo antepone al de cada entidad (`has_entity_name`) |
 | `coordinator.py` | `MySairCoordinator` (C1): único suscriptor de `mysair_update` por config entry; filtra y redistribuye cada zona por separado vía `homeassistant.helpers.dispatcher` |
 | `command_feedback.py` | `CommandFeedbackMixin`: correlación de comandos con el ACK de `mysair_feedback` (climate/switch) |
 | `availability.py` | `AvailabilityMixin`: `should_poll=False` + `available` según frescura del último status MQTT (todas las entidades) |

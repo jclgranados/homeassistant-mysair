@@ -14,6 +14,7 @@ pytest.importorskip("homeassistant")
 
 import homeassistant.util.dt as dt_util
 from homeassistant.components.climate.const import HVACMode, HVACAction
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_component import async_update_entity
 from pytest_homeassistant_custom_component.common import (
@@ -214,11 +215,11 @@ async def test_switch_updates_from_mqtt_event(hass, monkeypatch):
 
     _fire_status(hass, "INST_A", _zone(is_on=True, is_ac=True, mode_raw="1"))
     await hass.async_block_till_done()
-    assert hass.states.get("switch.salon").state == "on"
+    assert hass.states.get("switch.salon_encendido").state == "on"
 
     _fire_status(hass, "INST_A", _zone(is_on=False))
     await hass.async_block_till_done()
-    assert hass.states.get("switch.salon").state == "off"
+    assert hass.states.get("switch.salon_encendido").state == "off"
 
 
 async def test_event_from_other_installation_is_ignored(hass, monkeypatch):
@@ -304,7 +305,7 @@ async def test_switch_turn_on_off_sends_commands(hass, monkeypatch):
     await hass.async_block_till_done()
 
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.salon"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.salon_encendido"}, blocking=True
     )
     assert calls[-1] == {
         "ctl": "INST_A",
@@ -313,10 +314,10 @@ async def test_switch_turn_on_off_sends_commands(hass, monkeypatch):
         "value": "0",
         "temperature": 22.0,
     }
-    assert hass.states.get("switch.salon").state == "on"
+    assert hass.states.get("switch.salon_encendido").state == "on"
 
     await hass.services.async_call(
-        "switch", "turn_off", {"entity_id": "switch.salon"}, blocking=True
+        "switch", "turn_off", {"entity_id": "switch.salon_encendido"}, blocking=True
     )
     assert calls[-1] == {
         "ctl": "INST_A",
@@ -325,7 +326,7 @@ async def test_switch_turn_on_off_sends_commands(hass, monkeypatch):
         "value": None,
         "temperature": None,
     }
-    assert hass.states.get("switch.salon").state == "off"
+    assert hass.states.get("switch.salon_encendido").state == "off"
 
 
 async def test_switch_preserves_last_ac_mode_from_mqtt(hass, monkeypatch):
@@ -341,7 +342,7 @@ async def test_switch_preserves_last_ac_mode_from_mqtt(hass, monkeypatch):
     await hass.async_block_till_done()
 
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.salon"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.salon_encendido"}, blocking=True
     )
 
     assert calls[-1]["value"] == "1"
@@ -356,7 +357,7 @@ async def test_floor_switch_unavailable_without_capability(hass, monkeypatch):
     _fire_status(hass, "INST_A", _zone(allow_floor=False, is_floor=False))
     await hass.async_block_till_done()
 
-    assert hass.states.get("switch.salon_suelo").state == "unavailable"
+    assert hass.states.get("switch.salon_suelo_radiante").state == "unavailable"
 
 
 async def test_floor_switch_available_and_reflects_state_with_capability(
@@ -366,13 +367,13 @@ async def test_floor_switch_available_and_reflects_state_with_capability(
 
     _fire_status(hass, "INST_A", _zone(allow_floor=True, is_floor=False))
     await hass.async_block_till_done()
-    assert hass.states.get("switch.salon_suelo").state == "off"
+    assert hass.states.get("switch.salon_suelo_radiante").state == "off"
 
     _fire_status(
         hass, "INST_A", _zone(allow_floor=True, is_floor=True, mode_raw="4", is_ac=True)
     )
     await hass.async_block_till_done()
-    assert hass.states.get("switch.salon_suelo").state == "on"
+    assert hass.states.get("switch.salon_suelo_radiante").state == "on"
 
 
 async def test_floor_switch_turn_on_preserves_heat_cool_and_ac(hass, monkeypatch):
@@ -395,7 +396,7 @@ async def test_floor_switch_turn_on_preserves_heat_cool_and_ac(hass, monkeypatch
     await hass.async_block_till_done()
 
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.salon_suelo"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.salon_suelo_radiante"}, blocking=True
     )
 
     assert calls[-1] == {
@@ -405,7 +406,7 @@ async def test_floor_switch_turn_on_preserves_heat_cool_and_ac(hass, monkeypatch
         "value": "5",
         "temperature": 23.0,
     }
-    assert hass.states.get("switch.salon_suelo").state == "on"
+    assert hass.states.get("switch.salon_suelo_radiante").state == "on"
 
 
 async def test_floor_switch_turn_off_preserves_heat_cool_and_ac(hass, monkeypatch):
@@ -428,7 +429,10 @@ async def test_floor_switch_turn_off_preserves_heat_cool_and_ac(hass, monkeypatc
     await hass.async_block_till_done()
 
     await hass.services.async_call(
-        "switch", "turn_off", {"entity_id": "switch.salon_suelo"}, blocking=True
+        "switch",
+        "turn_off",
+        {"entity_id": "switch.salon_suelo_radiante"},
+        blocking=True,
     )
 
     assert calls[-1] == {
@@ -438,7 +442,7 @@ async def test_floor_switch_turn_off_preserves_heat_cool_and_ac(hass, monkeypatc
         "value": "0",
         "temperature": 21.0,
     }
-    assert hass.states.get("switch.salon_suelo").state == "off"
+    assert hass.states.get("switch.salon_suelo_radiante").state == "off"
 
 
 async def test_humidity_sensor_updates_from_mqtt_event(hass, monkeypatch):
@@ -489,16 +493,17 @@ async def test_climate_set_hvac_mode_rejected_when_not_allowed(hass, monkeypatch
     _fire_status(hass, "INST_A", _zone(allow_heat=True, allow_cool=False))
     await hass.async_block_till_done()
 
-    await hass.services.async_call(
-        "climate",
-        "set_hvac_mode",
-        {"entity_id": "climate.salon", "hvac_mode": "cool"},
-        blocking=True,
-    )
+    # Home Assistant valida el modo contra hvac_modes antes de llamar a la
+    # entidad y rechaza la llamada; el guard propio de climate.py sigue
+    # protegiendo el camino interno (async_turn_on).
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            "climate",
+            "set_hvac_mode",
+            {"entity_id": "climate.salon", "hvac_mode": "cool"},
+            blocking=True,
+        )
 
-    # La propia entidad rechaza el modo (no está en self._attr_hvac_modes) y no
-    # envía comando. HA solo avisa por log en esta versión (ver climate.py:
-    # el guard "if hvac_mode not in self._attr_hvac_modes" es lo que protege).
     assert calls == []
     assert hass.states.get("climate.salon").state != "cool"
 
@@ -621,7 +626,7 @@ async def test_switch_command_confirmed_via_feedback(hass, monkeypatch, caplog):
     await hass.async_block_till_done()
 
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.salon"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.salon_encendido"}, blocking=True
     )
     assert len(calls) == 1
 
@@ -640,7 +645,7 @@ async def test_entities_unavailable_until_first_status(hass, monkeypatch):
     await _setup_entry(hass, monkeypatch)
 
     assert hass.states.get("climate.salon").state == "unavailable"
-    assert hass.states.get("switch.salon").state == "unavailable"
+    assert hass.states.get("switch.salon_encendido").state == "unavailable"
     assert hass.states.get("sensor.salon_temperatura_actual").state == "unavailable"
     assert hass.states.get("sensor.salon_humedad").state == "unavailable"
 
@@ -652,7 +657,7 @@ async def test_entities_become_available_after_status(hass, monkeypatch):
     await hass.async_block_till_done()
 
     assert hass.states.get("climate.salon").state != "unavailable"
-    assert hass.states.get("switch.salon").state != "unavailable"
+    assert hass.states.get("switch.salon_encendido").state != "unavailable"
     assert hass.states.get("sensor.salon_temperatura_actual").state != "unavailable"
 
 
@@ -681,7 +686,7 @@ async def test_entities_become_unavailable_after_stale_timeout(hass, monkeypatch
         await hass.async_block_till_done()
 
     assert hass.states.get("climate.salon").state == "unavailable"
-    assert hass.states.get("switch.salon").state == "unavailable"
+    assert hass.states.get("switch.salon_encendido").state == "unavailable"
 
 
 # --- Velocidad de ventilador (F2, docs/protocol-findings.md §9) ---
@@ -846,18 +851,18 @@ async def test_switch_reverts_on_timeout(hass, monkeypatch):
     await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
     _fire_status(hass, "INST_A", _zone(is_on=False))
     await hass.async_block_till_done()
-    assert hass.states.get("switch.salon").state == "off"
+    assert hass.states.get("switch.salon_encendido").state == "off"
 
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.salon"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.salon_encendido"}, blocking=True
     )
-    assert hass.states.get("switch.salon").state == "on"
+    assert hass.states.get("switch.salon_encendido").state == "on"
 
     future = dt_util.utcnow() + timedelta(seconds=FEEDBACK_TIMEOUT_SECONDS + 1)
     async_fire_time_changed(hass, future)
     await hass.async_block_till_done()
 
-    assert hass.states.get("switch.salon").state == "off"
+    assert hass.states.get("switch.salon_encendido").state == "off"
 
 
 async def test_climate_pending_revert_cleared_by_real_status(hass, monkeypatch):

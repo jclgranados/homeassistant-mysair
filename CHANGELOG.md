@@ -6,6 +6,22 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-09-12
+
+### Changed
+- **Nombres de entidad y dispositivo, adaptados al esquema de Home Assistant 2026.** HA compone ahora el `entity_id` como área + dispositivo + entidad. Sin adaptarse, una instalación nueva habría creado `climate.dev_1_inst_a_salon` en vez de `climate.salon`. Las entidades pasan a usar `has_entity_name`: el dispositivo toma el nombre de la zona ("Salón" en vez de "DEV_1 (INST_A)") y cada entidad aporta solo su parte ("Temperatura actual", "Humedad", "Encendido", "Suelo radiante").
+  - **Quien ya tenga la integración instalada no pierde nada**: el registro de entidades conserva los `entity_id` existentes mientras el `unique_id` no cambie, así que automatizaciones y paneles siguen funcionando. Hay un test que lo garantiza.
+  - En **instalaciones nuevas**, los dos switches cambian de nombre respecto al esquema anterior: `switch.<zona>` pasa a `switch.<zona>_encendido` y `switch.<zona>_suelo` a `switch.<zona>_suelo_radiante`. El resto de entidades mantiene el mismo identificador de siempre.
+  - El dispositivo de cuenta pasa a llamarse "MySair" en vez de "MySair (cuenta)", y su sensor "Conexión MQTT".
+- Requisito mínimo de Home Assistant: **2026.8.0** (antes 2025.10.0), alineado con la versión contra la que se prueba.
+- El harness de test sube de Home Assistant 2025.1.4 a 2026.9 (y con él Python 3.12 → 3.14). Se había quedado 20 versiones por detrás de lo que se ejecuta en producción, así que las deprecaciones pasaban desapercibidas.
+
+### Fixed
+- Limpieza de dispositivos huérfanos: se sustituye `async_update_device(remove_config_entry_id=...)`, deprecado desde HA 2026.8 (un dispositivo pertenece ya a una sola config entry) y con eliminación prevista en 2027.8, por `async_remove_device`. Escribía un aviso de deprecación en el log en cada arranque.
+
+### Removed
+- El bloque `device_info`, duplicado palabra por palabra en las 7 entidades de cada zona, se unifica en `device.py`.
+
 ## [2.12.0] - 2026-09-12
 
 ### Fixed
@@ -16,7 +32,6 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 ### Added
 - **Reautenticación en caliente.** Si la sesión muere con la integración ya arrancada (cierre de sesión desde la app oficial, cambio de contraseña, limpieza de tokens en servidor), el hilo MQTT y la tarea periódica de estado piden el flujo de reauth al momento en vez de reintentar en silencio hasta el siguiente reinicio de Home Assistant. El hilo MQTT sigue reintentando en degradado y avisa una sola vez; al reconectar con éxito rearma el aviso.
 - El flujo de reauth comprueba que la cuenta no cambia (`account_mismatch`), con su cadena traducida al inglés y al español.
-
 ## [2.11.2] - 2026-07-21
 
 ### Added

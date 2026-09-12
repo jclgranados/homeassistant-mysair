@@ -455,3 +455,39 @@ async def test_topology_change_removes_orphaned_zone_device_and_entities(
         is None
     )
     assert hass.states.get("climate.salon") is None
+
+
+async def test_existing_entity_ids_survive_the_naming_change(hass, monkeypatch):
+    """Una instalación anterior conserva sus entity_id al adoptar has_entity_name.
+
+    Home Assistant 2026 compone el entity_id como área + dispositivo + entidad,
+    y la integración pasó a usar ``has_entity_name`` para que esa composición
+    diera nombres limpios ("Salon" + "Temperatura actual"). El registro de
+    entidades manda sobre cualquier sugerencia de la integración mientras el
+    ``unique_id`` no cambie, así que quien ya tuviera la integración instalada
+    no debe ver ningún entity_id renombrado (sus automatizaciones y paneles
+    siguen funcionando).
+    """
+    _patch_happy_api(monkeypatch)
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    legacy = {
+        ("climate", "mysair_INST_A_DEV_1"): "salon",
+        ("sensor", "mysair_temp_INST_A_DEV_1"): "salon_temperatura_actual",
+        ("switch", "mysair_switch_INST_A_DEV_1"): "salon",
+        ("switch", "mysair_floor_INST_A_DEV_1"): "salon_suelo",
+    }
+    for (domain, unique_id), object_id in legacy.items():
+        registry.async_get_or_create(
+            domain, DOMAIN, unique_id, suggested_object_id=object_id, config_entry=entry
+        )
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    for (domain, unique_id), object_id in legacy.items():
+        assert registry.async_get_entity_id(domain, DOMAIN, unique_id) == (
+            f"{domain}.{object_id}"
+        )
