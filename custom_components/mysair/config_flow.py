@@ -102,6 +102,12 @@ class MySairConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 errors["base"] = "unknown"
             else:
+                # La cuenta no puede cambiar al reautenticar: el email sale de
+                # la entry existente, pero se comprueba igualmente para que un
+                # backend que devolviera otra identidad no reasigne la entry.
+                await self.async_set_unique_id(email.lower())
+                self._abort_if_unique_id_mismatch(reason="account_mismatch")
+
                 return self.async_update_reload_and_abort(
                     reauth_entry,
                     data={

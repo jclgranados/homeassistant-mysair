@@ -170,6 +170,80 @@ async def test_setup_entry_no_installations_retries(hass, monkeypatch):
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
+def _dead_session(self, *args, **kwargs):
+    """Respuesta de un endpoint cuya sesión ya no vale (Passport: 404)."""
+    raise MySairAuthError(
+        "Locations error: 404 No query results for model "
+        "[Laravel\\Passport\\RefreshToken]"
+    )
+
+
+@pytest.mark.parametrize(
+    "method", ["get_locations", "get_installations", "get_devices"]
+)
+async def test_setup_entry_auth_error_during_discovery_starts_reauth(
+    hass, monkeypatch, method
+):
+    """Regresión del incidente del 2026-09-11.
+
+    El descubrimiento devolvía [] ante cualquier fallo, así que una sesión
+    muerta se leía como "cuenta vacía" → SETUP_RETRY en bucle, sin que HA
+    ofreciera nunca el botón de reautenticar.
+    """
+    _patch_happy_api(monkeypatch)
+    monkeypatch.setattr(MySairAPI, method, _dead_session)
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f for f in flows if f["context"]["source"] == "reauth"]
+
+
+async def test_setup_entry_discovery_connection_error_retries(hass, monkeypatch):
+    """Un backend caído sigue siendo reintento, no reauth."""
+    _patch_happy_api(monkeypatch)
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_locations",
+        lambda self: (_ for _ in ()).throw(MySairConnectionError("503")),
+    )
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_mqtt_auth_failure_starts_reauth(hass, monkeypatch):
+    """Si la sesión muere en caliente, el hilo MQTT pide reauth sin reiniciar."""
+    _patch_happy_api(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(
+        MySairMQTTClient,
+        "start",
+        lambda self: captured.update(on_auth_failure=self.on_auth_failure),
+    )
+
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # El hilo MQTT invoca el callback desde su propio hilo.
+    assert captured["on_auth_failure"] is not None
+    captured["on_auth_failure"]()
+    await hass.async_block_till_done()
+
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f for f in flows if f["context"]["source"] == "reauth"]
+
+
 async def test_unload_entry_cleans_up(hass, monkeypatch):
     _patch_happy_api(monkeypatch)
     stop_calls = []

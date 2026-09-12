@@ -24,7 +24,8 @@
     },
     "abort": {
       "already_configured": "This account is already configured.",
-      "reauth_successful": "Reauthentication was successful."
+      "reauth_successful": "Reauthentication was successful.",
+      "account_mismatch": "The account does not match the one originally configured. Reauthenticate with the same MySair account."
     }
   },
   "services": {
