@@ -60,7 +60,7 @@ pytest                      # 173 tests: parser, builders MQTT, firma SigV4, cli
                              # (los ficheros P2 se saltan aquí vía pytest.importorskip)
 
 # Tests P2 (harness de Home Assistant): vía Docker, no toca la máquina del desarrollador
-docker compose run --rm test-ha    # 251 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona + sensor de conexión MQTT + reensamblado de frames + validación de payloads + control de suelo radiante + reload/multi-instalación/topología)
+docker compose run --rm test-ha    # 253 tests en total (P0/P1 + config flow + setup/unload + entidades + feedback + disponibilidad + fan_mode + refresco proactivo MQTT + revert optimista + parser MQTT estricto + backoff con jitter + servicio stop_installation + diagnostics + coordinador de zona + sensor de conexión MQTT + reensamblado de frames + validación de payloads + control de suelo radiante + reload/multi-instalación/topología)
 
 # Lint / formato (ruff, config en pyproject.toml — reglas por defecto únicamente)
 pip install -r requirements-lint.txt
@@ -105,7 +105,8 @@ Los tests y la documentación están en la raíz del repo.
 | `const.py` | Constantes (algunas sin uso: `HVAC_MODES` con `auto`, `SCAN_INTERVAL`) |
 | `diagnostics.py` | Volcado de diagnóstico descargable desde la UI de HA, redactando credenciales/tokens (D1) |
 | `services.yaml` | Esquema de UI del servicio `mysair.stop_installation` (F5) |
-| `strings.json` | Textos del config flow y del servicio en inglés (referencia/fallback de HA) (C4) |
+| `strings.json` | Textos del config flow y del servicio en inglés (fuente de referencia; HA **no** lo lee en runtime para integraciones custom) |
+| `translations/en.json` | Copia de `strings.json`. Es lo que HA carga de verdad para el idioma inglés — sin este fichero se ven las claves crudas |
 | `translations/es.json` | Traducción al español del config flow y del servicio (C4) |
 | `manifest.json` | Manifiesto (`requirements`: solo `requests` y `websocket-client`) |
 
@@ -243,7 +244,9 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **Validado en producción** (2026-07-20) contra una cuenta real: descubrimiento, MQTT (client_id único sin expulsar la app oficial) y estado en tiempo real funcionan correctamente.
 - ✅ **`password` ya no se guarda en claro** (A6): la config entry solo persiste `email` + `refresh_token`; la sesión se renueva en cada arranque con `MySairAPI.refresh_tokens()`. Migración automática elimina `password`/`access_token` de entradas antiguas en el primer arranque tras actualizar.
 - ✅ **`unique_id`** en la config entry (C2): evita añadir la misma cuenta dos veces.
-- ✅ **Reauth flow** (C3): `ConfigEntryAuthFailed`/`ConfigEntryNotReady` en `async_setup_entry` + `async_step_reauth` en `config_flow.py`. Camino de reauth no probado todavía en producción (ver `docs/execution-plan.md` Tarea 9).
+- ✅ **Reauth flow** (C3): `ConfigEntryAuthFailed`/`ConfigEntryNotReady` en `async_setup_entry` + `async_step_reauth` en `config_flow.py`.
+- ✅ **El reauth nunca llegaba a dispararse** (2026-09-11, incidente real en producción): el backend es Laravel Passport y responde **404**, no 401, cuando el `refresh_token` ya no existe en servidor (`No query results for model [Laravel\Passport\RefreshToken]`). Se clasificaba como error de conexión → `ConfigEntryNotReady` → bucle de `setup_retry` sin botón de reautenticar; la única salida fue desinstalar y reinstalar. La clasificación pasa a ser **por rango** (`api._http_error`): `5xx`/`429` transitorios, cualquier otro no-2xx pide reauth. Enumerar códigos concretos fue justo lo que falló. Además los métodos de descubrimiento dejan de devolver `[]` ante cualquier error (una sesión muerta se leía como "cuenta vacía"), y el hilo MQTT y la tarea periódica piden reauth **en caliente** (`entry.async_start_reauth`) en vez de reintentar en silencio hasta el siguiente reinicio.
+- ✅ **Nombres de entidad adaptados a HA 2026** (`has_entity_name`): HA compone el `entity_id` como área + dispositivo + entidad, así que sin adaptarse una instalación nueva creaba `climate.dev_1_inst_a_salon`. El dispositivo toma ahora el nombre de la zona y cada entidad aporta solo su parte. **Las instalaciones existentes conservan sus `entity_id`** (el registro manda mientras el `unique_id` no cambie), con test dedicado. Esto revisa la decisión de alcance de la Tarea 23: no migrar dejó de ser gratis.
 - ✅ **Tests de `config_flow.py`/`__init__.py`** con harness real de HA (unique_id, reauth, `ConfigEntryAuthFailed`/`NotReady`, migración A6, unload) vía Docker (`docker compose run --rm test-ha`) — no requiere instalar nada en la máquina del desarrollador. Ver `docs/execution-plan.md` Tarea 12 y `docs/testing-strategy.md`.
 - ✅ **Tests de entidades y eventos MQTT** (climate/sensor/switch reaccionando a `mysair_update`, comandos, filtro por `ctl`) — `tests/test_entities.py`, ver `docs/execution-plan.md` Tarea 13.
 - ✅ **Sensor de humedad y disponibilidad real de heat/cool** (F1) + **min/max temp reales** (C8) — ver `docs/execution-plan.md` Tarea 15.
