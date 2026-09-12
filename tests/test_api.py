@@ -102,6 +102,46 @@ def test_refresh_tokens_backend_error_raises_connection_error(
         api.refresh_tokens()
 
 
+def test_refresh_tokens_revoked_token_raises_auth_error(fake_session, make_response):
+    """Regresión del incidente del 2026-09-11.
+
+    MySair corre sobre Laravel Passport, que responde **404** (no 401) cuando
+    el refresh_token ya no existe en servidor. Se clasificaba como error de
+    conexión → ConfigEntryNotReady → Home Assistant reintentaba en bucle sin
+    ofrecer nunca el reauth, y la única salida era desinstalar la integración.
+    """
+    fake_session.queue(
+        "put",
+        make_response(
+            404, {}, "No query results for model [Laravel\\Passport\\RefreshToken]"
+        ),
+    )
+    api = _api(fake_session)
+    api.refresh_token_value = "REVOKED_REFRESH"
+    with pytest.raises(MySairAuthError):
+        api.refresh_tokens()
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 422])
+def test_client_errors_classified_as_auth(fake_session, make_response, status):
+    """Un 4xx en un endpoint de sesión significa siempre 'pide credenciales'."""
+    fake_session.queue("put", make_response(status, {}, "nope"))
+    api = _api(fake_session)
+    api.refresh_token_value = "OLD_REFRESH"
+    with pytest.raises(MySairAuthError):
+        api.refresh_tokens()
+
+
+@pytest.mark.parametrize("status", [429, 500, 502, 503])
+def test_server_errors_classified_as_connection(fake_session, make_response, status):
+    """5xx y 429 son transitorios: reintentar sí tiene sentido."""
+    fake_session.queue("put", make_response(status, {}, "boom"))
+    api = _api(fake_session)
+    api.refresh_token_value = "OLD_REFRESH"
+    with pytest.raises(MySairConnectionError):
+        api.refresh_tokens()
+
+
 def test_refresh_tokens_ok_notifies_callback(fake_session, make_response):
     fake_session.queue(
         "put",
@@ -135,9 +175,45 @@ def test_get_locations_ok(fake_session, make_response):
     assert _api(fake_session).get_locations() == [{"id": 1001}]
 
 
-def test_get_locations_error_returns_empty(fake_session, make_response):
+def test_get_locations_backend_error_raises_connection_error(
+    fake_session, make_response
+):
+    # Antes devolvía [] ante cualquier fallo, indistinguible de una cuenta
+    # vacía: el setup lo leía como "sin ubicaciones" y reintentaba en bucle.
     fake_session.queue("get", make_response(500, {}, "err"))
-    assert _api(fake_session).get_locations() == []
+    with pytest.raises(MySairConnectionError):
+        _api(fake_session).get_locations()
+
+
+def test_get_locations_dead_session_raises_auth_error(fake_session, make_response):
+    fake_session.queue("get", make_response(404, {}, "not found"))
+    with pytest.raises(MySairAuthError):
+        _api(fake_session).get_locations()
+
+
+def test_get_locations_retries_once_after_refreshing_tokens(
+    fake_session, make_response, login_ok
+):
+    # 401 aislado: el access_token caducó pero la sesión sigue viva.
+    fake_session.queue(
+        "get",
+        make_response(401, {}, "expired"),
+        make_response(200, {"entity": [{"id": 1001}]}),
+    )
+    fake_session.queue("put", make_response(200, login_ok))
+    api = _api(fake_session)
+    api.refresh_token_value = "TEST_REFRESH"
+    assert api.get_locations() == [{"id": 1001}]
+    assert any("/user/refreshtokens" in c["url"] for c in fake_session.calls)
+
+
+def test_get_locations_gives_up_if_refresh_also_fails(fake_session, make_response):
+    fake_session.queue("get", make_response(401, {}, "expired"))
+    fake_session.queue("put", make_response(404, {}, "No query results"))
+    api = _api(fake_session)
+    api.refresh_token_value = "DEAD"
+    with pytest.raises(MySairAuthError):
+        api.get_locations()
 
 
 def test_get_installations_url_has_params(fake_session, make_response):

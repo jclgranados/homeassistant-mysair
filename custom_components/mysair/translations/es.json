@@ -24,7 +24,8 @@
     },
     "abort": {
       "already_configured": "Esta cuenta ya está configurada.",
-      "reauth_successful": "Reautenticación completada correctamente."
+      "reauth_successful": "Reautenticación completada correctamente.",
+      "account_mismatch": "La cuenta no coincide con la configurada originalmente. Reautentica con la misma cuenta de MySair."
     }
   },
   "services": {

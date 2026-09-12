@@ -82,6 +82,10 @@ class FakeSession:
             raise AssertionError(f"Sin respuesta encolada para {method.upper()} {url}")
         return queue.pop(0)
 
+    def request(self, method, url, **kwargs):
+        """Entrada genérica que usa MySairAPI._authed_request."""
+        return self._handle(method.lower(), url, **kwargs)
+
     def get(self, url, **kwargs):
         return self._handle("get", url, **kwargs)
 

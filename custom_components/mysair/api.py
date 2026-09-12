@@ -28,6 +28,31 @@ class MySairConnectionError(Exception):
     """Fallo de red o del backend, no relacionado con las credenciales."""
 
 
+def _http_error(status_code, body, context):
+    """Clasifica una respuesta HTTP no-2xx como error de auth o de conexión.
+
+    Regla única para todos los endpoints, en vez de enumerar los códigos que
+    "se supone" que usa el backend. El incidente del 2026-09-11 vino justo de
+    eso: MySair corre sobre Laravel Passport, que responde **404** (no 401)
+    cuando el refresh_token ya no existe en servidor, con el cuerpo
+    ``No query results for model [Laravel\\Passport\\RefreshToken]``. Al
+    clasificarse como error de conexión acababa en ``ConfigEntryNotReady`` y
+    Home Assistant reintentaba en bucle sin ofrecer nunca el reauth.
+
+    - 5xx y 429: el backend está caído o nos limita → reintentar tiene sentido.
+    - Cualquier otro no-2xx (400, 401, 403, 404, …): las credenciales no
+      sirven → hay que preguntar al usuario.
+
+    Devuelve la excepción ya construida (el llamante hace ``raise``).
+    """
+    detail = f"{context}: {status_code} {_truncate(body)}"
+    if status_code >= 500 or status_code == 429:
+        _LOGGER.error(f"[MySairAPI] ❌ {detail}")
+        return MySairConnectionError(detail)
+    _LOGGER.error(f"[MySairAPI] ❌ Sesión inválida — {detail}")
+    return MySairAuthError(detail)
+
+
 def extract_order_id(response):
     """Extrae el ``orderId`` de la respuesta de ``POST /send/instruction``.
 
@@ -47,6 +72,13 @@ def extract_order_id(response):
 
 class MySairAPI:
     """Cliente API para Mysair."""
+
+    # Expuesta como atributo de clase para que los consumidores que reciben una
+    # instancia de api (p. ej. MySairMQTTClient) puedan distinguir un fallo de
+    # sesión sin importar este módulo: `mqtt_handler` se importa como módulo de
+    # nivel superior en los tests P0/P1 y por eso no puede usar imports
+    # relativos (ver tests/conftest.py).
+    AuthError = MySairAuthError
 
     def __init__(
         self,
@@ -97,20 +129,8 @@ class MySairAPI:
             _LOGGER.error(f"[MySairAPI] ❌ Login failed: {e}")
             raise MySairConnectionError(f"Error de red en login: {e}") from e
 
-        if resp.status_code in (401, 403):
-            _LOGGER.error(
-                f"[MySairAPI] ❌ Login failed: credenciales inválidas ({resp.status_code})"
-            )
-            raise MySairAuthError(
-                f"Login error: {resp.status_code} {_truncate(resp.text)}"
-            )
         if resp.status_code != 200:
-            _LOGGER.error(
-                f"[MySairAPI] ❌ Login failed: {resp.status_code} {_truncate(resp.text)}"
-            )
-            raise MySairConnectionError(
-                f"Login error: {resp.status_code} {_truncate(resp.text)}"
-            )
+            raise _http_error(resp.status_code, resp.text, "Login error")
 
         data = resp.json()
         self.entity = data.get("entity", {})
@@ -150,20 +170,8 @@ class MySairAPI:
             _LOGGER.error(f"[MySairAPI] ❌ Error al refrescar tokens: {e}")
             raise MySairConnectionError(f"Error de red al refrescar tokens: {e}") from e
 
-        if resp.status_code in (401, 403):
-            _LOGGER.error(
-                f"[MySairAPI] ❌ Refresh token inválido o expirado: {resp.status_code}"
-            )
-            raise MySairAuthError(
-                f"Refresh tokens error: {resp.status_code} {_truncate(resp.text)}"
-            )
         if resp.status_code != 200:
-            _LOGGER.error(
-                f"[MySairAPI] ❌ Error al refrescar tokens: {resp.status_code} {_truncate(resp.text)}"
-            )
-            raise MySairConnectionError(
-                f"Refresh tokens error: {resp.status_code} {_truncate(resp.text)}"
-            )
+            raise _http_error(resp.status_code, resp.text, "Refresh tokens error")
 
         data = resp.json()
         entity = data.get("entity", {})
@@ -178,23 +186,77 @@ class MySairAPI:
         return True
 
     # ==========================================================
+    # 🌐 PETICIÓN AUTENTICADA (base de los endpoints de datos)
+    # ==========================================================
+    def _authed_request(self, method, path, context, timeout=10):
+        """Hace una petición con ``Authorization: Bearer`` y clasifica los errores.
+
+        Concentra lo que antes repetía cada endpoint: la cabecera, el timeout,
+        el reintento único tras ``refresh_tokens()`` ante un 401 (mismo patrón
+        que ``send_instruction``) y la clasificación de ``_http_error``.
+
+        Lanza ``MySairAuthError`` si la sesión no sirve (el llamante debe
+        acabar pidiendo reauth) o ``MySairConnectionError`` ante fallos de red
+        o del backend. Devuelve el objeto ``Response``.
+        """
+
+        def _do():
+            return self.session.request(
+                method,
+                f"{self.base_url}/{path}",
+                headers={"Authorization": f"Bearer {self.access_token}"},
+                timeout=timeout,
+            )
+
+        try:
+            resp = _do()
+            # El access_token caduca mucho antes que el refresh_token: un 401
+            # aislado casi siempre se arregla renovando la sesión y repitiendo.
+            # Si refresh_tokens() falla, propaga su propio error ya clasificado.
+            if resp.status_code == 401:
+                _LOGGER.debug(
+                    f"[MySairAPI] ⚠️ Token expirado en {path}, renovando sesión y reintentando..."
+                )
+                self.refresh_tokens()
+                resp = _do()
+        except requests.RequestException as e:
+            _LOGGER.error(f"[MySairAPI] ❌ Error de red en {context}: {e}")
+            raise MySairConnectionError(f"Error de red en {context}: {e}") from e
+
+        if resp.status_code != 200:
+            raise _http_error(resp.status_code, resp.text, context)
+
+        return resp
+
+    def _authed_get_entity(self, path, context):
+        """``GET`` autenticado que devuelve el campo ``entity`` de la respuesta.
+
+        Forma común de los endpoints de descubrimiento. Una lista vacía aquí
+        significa "la cuenta no tiene nada", nunca "falló la petición": los
+        fallos se propagan como excepción (antes se devolvía ``[]`` en ambos
+        casos, y por eso un token muerto acababa en un bucle de reintentos en
+        vez de en el flujo de reauth).
+        """
+        return self._authed_request("GET", path, context).json().get("entity", [])
+
+    # ==========================================================
     # ☁️ AWS CREDENTIALS
     # ==========================================================
     def refresh_aws_credentials(self):
-        """Obtiene credenciales temporales de AWS IoT."""
+        """Obtiene credenciales temporales de AWS IoT.
+
+        Lanza ``MySairAuthError`` si la sesión ya no sirve: es el hilo MQTT
+        quien la llama en cada (re)conexión, así que es el punto donde se
+        detecta que la sesión ha muerto con la integración ya arrancada.
+        """
         try:
             _LOGGER.debug("[MySairAPI] ☁️ Solicitando credenciales AWS MQTT...")
-            headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = self.session.put(
-                f"{self.base_url}/user/refreshawscredentials",
-                headers=headers,
+            resp = self._authed_request(
+                "PUT",
+                "user/refreshawscredentials",
+                "AWS credentials error",
                 timeout=15,
             )
-
-            if resp.status_code != 200:
-                raise Exception(
-                    f"AWS credentials error: {resp.status_code} {_truncate(resp.text)}"
-                )
 
             data = resp.json()
             entity = data.get("entity", {})
@@ -279,60 +341,23 @@ class MySairAPI:
     # ==========================================================
     def get_locations(self):
         """Devuelve la lista de ubicaciones (locations)."""
-        try:
-            _LOGGER.info("[MySairAPI] 📍 Locations...")
-            headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = self.session.get(
-                f"{self.base_url}/locations", headers=headers, timeout=10
-            )
-
-            if resp.status_code != 200:
-                raise Exception(
-                    f"Locations error: {resp.status_code} {_truncate(resp.text)}"
-                )
-
-            return resp.json().get("entity", [])
-        except Exception as e:
-            _LOGGER.error(f"[MySairAPI] ❌ Error obteniendo locations: {e}")
-            return []
+        _LOGGER.info("[MySairAPI] 📍 Locations...")
+        return self._authed_get_entity("locations", "Locations error")
 
     def get_installations(self, location_id):
         """Devuelve instalaciones (installations) de una ubicación."""
-        try:
-            _LOGGER.info(f"[MySairAPI] 🔧 Installations loc={location_id}")
-            headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = self.session.get(
-                f"{self.base_url}/installations?location_id={location_id}&validated=1",
-                headers=headers,
-                timeout=10,
-            )
-            if resp.status_code != 200:
-                raise Exception(
-                    f"Installations error: {resp.status_code} {_truncate(resp.text)}"
-                )
-            return resp.json().get("entity", [])
-        except Exception as e:
-            _LOGGER.error(f"[MySairAPI] ❌ Error obteniendo instalaciones: {e}")
-            return []
+        _LOGGER.info(f"[MySairAPI] 🔧 Installations loc={location_id}")
+        return self._authed_get_entity(
+            f"installations?location_id={location_id}&validated=1",
+            "Installations error",
+        )
 
     def get_devices(self, installation_ref):
         """Devuelve los dispositivos (termostatos) de una instalación."""
-        try:
-            _LOGGER.info(f"[MySairAPI] 📟 Devices ref={installation_ref}")
-            headers = {"Authorization": f"Bearer {self.access_token}"}
-            resp = self.session.get(
-                f"{self.base_url}/devices?installation_ref={installation_ref}",
-                headers=headers,
-                timeout=10,
-            )
-            if resp.status_code != 200:
-                raise Exception(
-                    f"Devices error: {resp.status_code} {_truncate(resp.text)}"
-                )
-            return resp.json().get("entity", [])
-        except Exception as e:
-            _LOGGER.error(f"[MySairAPI] ❌ Error obteniendo devices: {e}")
-            return []
+        _LOGGER.info(f"[MySairAPI] 📟 Devices ref={installation_ref}")
+        return self._authed_get_entity(
+            f"devices?installation_ref={installation_ref}", "Devices error"
+        )
 
     # ==========================================================
     # 📡 SEND INSTRUCTION (para solicitar estado o comandos)
@@ -371,10 +396,11 @@ class MySairAPI:
                 )
 
             # --- Validación final ---
+            # Clasificado como el resto de endpoints: un fallo de sesión aquí
+            # debe llegar como MySairAuthError para que el llamante
+            # (tarea periódica / entidades) pueda pedir reauth.
             if resp.status_code != 201:
-                raise Exception(
-                    f"Instruction error: {resp.status_code} {_truncate(resp.text)}"
-                )
+                raise _http_error(resp.status_code, resp.text, "Instruction error")
 
             data = resp.json()
             msg = data.get("msg", "")

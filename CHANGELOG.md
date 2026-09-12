@@ -6,6 +6,42 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.13.1] - 2026-09-12
+
+### Fixed
+- **El asistente de configuración estaba sin traducir en inglés.** Home Assistant no lee `strings.json` en tiempo de ejecución para integraciones custom: solo carga `translations/<idioma>.json`. Había `es.json` pero no `en.json`, así que cualquiera con HA en inglés (el idioma por defecto) veía claves crudas como `invalid_auth` en el login, en la reautenticación y en el servicio `mysair.stop_installation`.
+- `climate.turn_on` en una zona que solo enfría no hacía nada: elegía siempre calor sin mirar las capacidades de la zona, y el propio guard de la entidad lo rechazaba en silencio. Ahora prefiere calor pero cae al primer modo que la zona admita.
+
+### Changed
+- `PERCENTAGE` pasa a `UnitOfRatio.PERCENTAGE` en el sensor de humedad, desaconsejado como unidad desde HA 2026.7. Mismo valor, sin cambio de comportamiento.
+- CI: nuevo job de validación de HACS, que antes solo cubría `hassfest`.
+
+## [2.13.0] - 2026-09-12
+
+### Changed
+- **Nombres de entidad y dispositivo, adaptados al esquema de Home Assistant 2026.** HA compone ahora el `entity_id` como área + dispositivo + entidad. Sin adaptarse, una instalación nueva habría creado `climate.dev_1_inst_a_salon` en vez de `climate.salon`. Las entidades pasan a usar `has_entity_name`: el dispositivo toma el nombre de la zona ("Salón" en vez de "DEV_1 (INST_A)") y cada entidad aporta solo su parte ("Temperatura actual", "Humedad", "Encendido", "Suelo radiante").
+  - **Quien ya tenga la integración instalada no pierde nada**: el registro de entidades conserva los `entity_id` existentes mientras el `unique_id` no cambie, así que automatizaciones y paneles siguen funcionando. Hay un test que lo garantiza.
+  - En **instalaciones nuevas**, los dos switches cambian de nombre respecto al esquema anterior: `switch.<zona>` pasa a `switch.<zona>_encendido` y `switch.<zona>_suelo` a `switch.<zona>_suelo_radiante`. El resto de entidades mantiene el mismo identificador de siempre.
+  - El dispositivo de cuenta pasa a llamarse "MySair" en vez de "MySair (cuenta)", y su sensor "Conexión MQTT".
+- Requisito mínimo de Home Assistant: **2026.8.0** (antes 2025.10.0), alineado con la versión contra la que se prueba.
+- El harness de test sube de Home Assistant 2025.1.4 a 2026.9 (y con él Python 3.12 → 3.14). Se había quedado 20 versiones por detrás de lo que se ejecuta en producción, así que las deprecaciones pasaban desapercibidas.
+
+### Fixed
+- Limpieza de dispositivos huérfanos: se sustituye `async_update_device(remove_config_entry_id=...)`, deprecado desde HA 2026.8 (un dispositivo pertenece ya a una sola config entry) y con eliminación prevista en 2027.8, por `async_remove_device`. Escribía un aviso de deprecación en el log en cada arranque.
+
+### Removed
+- El bloque `device_info`, duplicado palabra por palabra en las 7 entidades de cada zona, se unifica en `device.py`.
+
+## [2.12.0] - 2026-09-12
+
+### Fixed
+- **Una sesión caducada ya no obliga a desinstalar la integración.** MySair corre sobre Laravel Passport, que responde `404` (no `401`) cuando el `refresh_token` ya no existe en servidor, con el cuerpo `No query results for model [Laravel\Passport\RefreshToken]`. Ese 404 se clasificaba como error de conexión, se convertía en `ConfigEntryNotReady` y Home Assistant reintentaba el arranque en bucle (`setup_retry`) sin ofrecer nunca el botón de reautenticar. Ahora la clasificación es por rango: `5xx` y `429` son fallos transitorios (reintentar), y cualquier otro código no-2xx en un endpoint de sesión pide reautenticación.
+- `get_locations()`, `get_installations()` y `get_devices()` dejan de devolver `[]` ante cualquier error. Una sesión muerta se leía como "cuenta vacía" y acababa también en un bucle de reintentos; una lista vacía ya solo significa que la cuenta no tiene datos.
+- `refresh_aws_credentials()` reintenta una vez tras renovar la sesión ante un `401`, como ya hacía `send_instruction()`. Antes dependía de que la tarea periódica refrescara el token por su cuenta.
+
+### Added
+- **Reautenticación en caliente.** Si la sesión muere con la integración ya arrancada (cierre de sesión desde la app oficial, cambio de contraseña, limpieza de tokens en servidor), el hilo MQTT y la tarea periódica de estado piden el flujo de reauth al momento en vez de reintentar en silencio hasta el siguiente reinicio de Home Assistant. El hilo MQTT sigue reintentando en degradado y avisa una sola vez; al reconectar con éxito rearma el aviso.
+- El flujo de reauth comprueba que la cuenta no cambia (`account_mismatch`), con su cadena traducida al inglés y al español.
 ## [2.11.2] - 2026-07-21
 
 ### Added

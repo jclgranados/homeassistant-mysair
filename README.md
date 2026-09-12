@@ -55,7 +55,7 @@ Ajustes → Dispositivos y servicios → Añadir integración → **MySair** →
 - **Solo la primera `Location`** de la cuenta: si tienes varias ubicaciones, solo se cargan las instalaciones de la primera (decisión de alcance, ver `docs/known-unknowns.md` #15).
 - **Sin temporizador ni programas por horario**: el backend no expone ninguna forma confirmada de fijarlos (solo de leerlos); adivinar el formato no es una opción responsable (decisión de alcance, ver `docs/known-unknowns.md` #27).
 - **Sin modo automático (HVAC)**: no es una carencia de la integración — el protocolo en sí no tiene ningún modo de cambio automático calor/frío (ver `docs/protocol-findings.md` §4). El único "automático" real del sistema es la velocidad de ventilador, que sí está implementada.
-- Requiere Home Assistant **≥ 2025.10.0**.
+- Requiere Home Assistant **≥ 2026.8.0**.
 
 ## Documentación técnica
 

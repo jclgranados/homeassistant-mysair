@@ -264,10 +264,16 @@ def compute_backoff_delay(
 class MySairMQTTClient:
     """Gestor MQTT para MySair mediante WebSocket directo."""
 
-    def __init__(self, api, installation_refs, message_callback):
+    def __init__(self, api, installation_refs, message_callback, on_auth_failure=None):
         self.api = api
         self.installation_refs = installation_refs
         self.message_callback = message_callback
+        # Callback opcional () -> None, invocado cuando la sesión MySair deja
+        # de ser válida (MySairAuthError al renovar credenciales AWS). El hilo
+        # sigue reintentando en degradado; quien lo inyecta (__init__.py) es
+        # responsable de pedir el reauth desde el loop de HA.
+        self.on_auth_failure = on_auth_failure
+        self._auth_failure_reported = False
         self.stop_event = threading.Event()
         self._thread = None
         self._reconnect_delay = 10  # base del backoff exponencial (E3)
@@ -300,6 +306,16 @@ class MySairMQTTClient:
     def reconnect_attempt(self):
         """Intentos de reconexión desde el último CONNACK logrado (se resetea al conectar)."""
         return self._reconnect_attempt
+
+    def _report_auth_failure(self):
+        """Avisa (una sola vez) de que la sesión requiere reautenticación."""
+        if self._auth_failure_reported or not self.on_auth_failure:
+            return
+        self._auth_failure_reported = True
+        try:
+            self.on_auth_failure()
+        except Exception as e:
+            log(f"⚠️ [MySair MQTT] Error notificando fallo de sesión: {e}", "warning")
 
     # ----------------------------------------------------------
     # 🔗 Conexión principal
@@ -436,6 +452,19 @@ class MySairMQTTClient:
 
                 self.ws.run_forever(ping_interval=30, ping_timeout=10)
 
+            except self.api.AuthError as e:
+                # La sesión MySair ha dejado de ser válida con la integración
+                # ya arrancada (p. ej. el refresh_token se invalidó en
+                # servidor). Sin esto el hilo reintentaba en silencio para
+                # siempre y el usuario no se enteraba hasta el siguiente
+                # reinicio de HA. Se avisa una sola vez y se sigue con el
+                # backoff: si el usuario reautentica, la próxima vuelta del
+                # bucle encuentra la sesión ya renovada.
+                log(
+                    f"🔑 [MySair MQTT] Sesión inválida, se requiere reautenticación: {e}",
+                    "error",
+                )
+                self._report_auth_failure()
             except Exception as e:
                 log(f"❌ [MySair MQTT] Error en conexión WebSocket: {e}", "error")
 
@@ -552,6 +581,9 @@ class MySairMQTTClient:
             log("✅ [MySair MQTT] CONNACK recibido, suscribiendo a topics...")
             self.connected = True
             self._reconnect_attempt = 0  # conexión lograda: reinicia el backoff (E3)
+            # La sesión vuelve a servir (p. ej. tras reautenticar): rearma el
+            # aviso para que una caída futura se vuelva a notificar.
+            self._auth_failure_reported = False
             packet_id = 1
             for ref in self.installation_refs:
                 topic = build_status_topic(self._base_topic, ref)

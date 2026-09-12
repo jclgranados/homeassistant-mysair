@@ -170,6 +170,80 @@ async def test_setup_entry_no_installations_retries(hass, monkeypatch):
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
+def _dead_session(self, *args, **kwargs):
+    """Respuesta de un endpoint cuya sesión ya no vale (Passport: 404)."""
+    raise MySairAuthError(
+        "Locations error: 404 No query results for model "
+        "[Laravel\\Passport\\RefreshToken]"
+    )
+
+
+@pytest.mark.parametrize(
+    "method", ["get_locations", "get_installations", "get_devices"]
+)
+async def test_setup_entry_auth_error_during_discovery_starts_reauth(
+    hass, monkeypatch, method
+):
+    """Regresión del incidente del 2026-09-11.
+
+    El descubrimiento devolvía [] ante cualquier fallo, así que una sesión
+    muerta se leía como "cuenta vacía" → SETUP_RETRY en bucle, sin que HA
+    ofreciera nunca el botón de reautenticar.
+    """
+    _patch_happy_api(monkeypatch)
+    monkeypatch.setattr(MySairAPI, method, _dead_session)
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f for f in flows if f["context"]["source"] == "reauth"]
+
+
+async def test_setup_entry_discovery_connection_error_retries(hass, monkeypatch):
+    """Un backend caído sigue siendo reintento, no reauth."""
+    _patch_happy_api(monkeypatch)
+    monkeypatch.setattr(
+        MySairAPI,
+        "get_locations",
+        lambda self: (_ for _ in ()).throw(MySairConnectionError("503")),
+    )
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_mqtt_auth_failure_starts_reauth(hass, monkeypatch):
+    """Si la sesión muere en caliente, el hilo MQTT pide reauth sin reiniciar."""
+    _patch_happy_api(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(
+        MySairMQTTClient,
+        "start",
+        lambda self: captured.update(on_auth_failure=self.on_auth_failure),
+    )
+
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # El hilo MQTT invoca el callback desde su propio hilo.
+    assert captured["on_auth_failure"] is not None
+    captured["on_auth_failure"]()
+    await hass.async_block_till_done()
+
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f for f in flows if f["context"]["source"] == "reauth"]
+
+
 async def test_unload_entry_cleans_up(hass, monkeypatch):
     _patch_happy_api(monkeypatch)
     stop_calls = []
@@ -381,3 +455,39 @@ async def test_topology_change_removes_orphaned_zone_device_and_entities(
         is None
     )
     assert hass.states.get("climate.salon") is None
+
+
+async def test_existing_entity_ids_survive_the_naming_change(hass, monkeypatch):
+    """Una instalación anterior conserva sus entity_id al adoptar has_entity_name.
+
+    Home Assistant 2026 compone el entity_id como área + dispositivo + entidad,
+    y la integración pasó a usar ``has_entity_name`` para que esa composición
+    diera nombres limpios ("Salon" + "Temperatura actual"). El registro de
+    entidades manda sobre cualquier sugerencia de la integración mientras el
+    ``unique_id`` no cambie, así que quien ya tuviera la integración instalada
+    no debe ver ningún entity_id renombrado (sus automatizaciones y paneles
+    siguen funcionando).
+    """
+    _patch_happy_api(monkeypatch)
+    entry = _make_entry()
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    legacy = {
+        ("climate", "mysair_INST_A_DEV_1"): "salon",
+        ("sensor", "mysair_temp_INST_A_DEV_1"): "salon_temperatura_actual",
+        ("switch", "mysair_switch_INST_A_DEV_1"): "salon",
+        ("switch", "mysair_floor_INST_A_DEV_1"): "salon_suelo",
+    }
+    for (domain, unique_id), object_id in legacy.items():
+        registry.async_get_or_create(
+            domain, DOMAIN, unique_id, suggested_object_id=object_id, config_entry=entry
+        )
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    for (domain, unique_id), object_id in legacy.items():
+        assert registry.async_get_entity_id(domain, DOMAIN, unique_id) == (
+            f"{domain}.{object_id}"
+        )
