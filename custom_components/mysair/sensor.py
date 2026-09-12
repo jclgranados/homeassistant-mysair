@@ -1,7 +1,7 @@
 import logging
 from datetime import timedelta
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import UnitOfTemperature, PERCENTAGE
+from homeassistant.const import UnitOfTemperature, UnitOfRatio
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -274,7 +274,7 @@ class MySairHumiditySensor(AvailabilityMixin, SensorEntity):
 
     _attr_has_entity_name = True
 
-    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_native_unit_of_measurement = UnitOfRatio.PERCENTAGE
     _attr_device_class = SensorDeviceClass.HUMIDITY
     _attr_icon = "mdi:water-percent"
 

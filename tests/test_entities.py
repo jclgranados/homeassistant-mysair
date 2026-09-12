@@ -924,3 +924,40 @@ async def test_mqtt_status_sensor_reflects_connection_state(hass, monkeypatch):
     assert state.attributes["parse_fallback_count"] == 1
     assert state.attributes["parse_error_count"] == 2
     assert state.attributes["total_reconnects"] == 4
+
+
+async def test_climate_turn_on_uses_only_allowed_mode(hass, monkeypatch):
+    """En una zona que solo enfría, turn_on debe encender en frío.
+
+    Antes caía siempre a HVACMode.HEAT sin mirar las capacidades, el guard de
+    async_set_hvac_mode lo rechazaba y la llamada no hacía nada en silencio.
+    """
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+
+    _fire_status(hass, "INST_A", _zone(is_on=False, allow_heat=False, allow_cool=True))
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "climate", "turn_on", {"entity_id": "climate.salon"}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert [c["command_type"] for c in calls] == ["mode"]
+    assert calls[0]["value"] == "1"  # 1 = frío
+    assert hass.states.get("climate.salon").state == HVACMode.COOL
+
+
+async def test_climate_turn_on_still_prefers_heat_when_both_allowed(hass, monkeypatch):
+    calls = []
+    await _setup_entry(hass, monkeypatch, send_zone_command_calls=calls)
+
+    _fire_status(hass, "INST_A", _zone(is_on=False, allow_heat=True, allow_cool=True))
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "climate", "turn_on", {"entity_id": "climate.salon"}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert calls[0]["value"] == "0"  # 0 = calor

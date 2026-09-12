@@ -247,9 +247,25 @@ class MySairThermostat(CommandFeedbackMixin, AvailabilityMixin, ClimateEntity):
         await self.async_set_hvac_mode(HVACMode.OFF)
 
     async def async_turn_on(self):
-        next_mode = (
-            self._hvac_mode if self._hvac_mode != HVACMode.OFF else HVACMode.HEAT
-        )
+        """Enciende la zona recuperando su modo previo.
+
+        Si estaba apagada no hay modo previo que recuperar: se prefiere calor
+        (encender nunca debe forzar frío, ver docs/protocol-findings.md), pero
+        cayendo al primer modo que la zona sí permita. Antes se elegía calor
+        sin mirar las capacidades, así que en una zona que solo enfría el
+        guard de ``async_set_hvac_mode`` rechazaba el modo y ``climate.turn_on``
+        no hacía nada en silencio.
+        """
+        if self._hvac_mode != HVACMode.OFF:
+            next_mode = self._hvac_mode
+        else:
+            available = [m for m in self._attr_hvac_modes if m != HVACMode.OFF]
+            if not available:
+                _LOGGER.warning(
+                    f"[MySair Climate] ❌ {self._zone_name} no admite ningún modo de encendido"
+                )
+                return
+            next_mode = HVACMode.HEAT if HVACMode.HEAT in available else available[0]
         await self.async_set_hvac_mode(next_mode)
 
     # ------------------------------------------------------------------

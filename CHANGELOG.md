@@ -6,6 +6,16 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.13.1] - 2026-09-12
+
+### Fixed
+- **El asistente de configuración estaba sin traducir en inglés.** Home Assistant no lee `strings.json` en tiempo de ejecución para integraciones custom: solo carga `translations/<idioma>.json`. Había `es.json` pero no `en.json`, así que cualquiera con HA en inglés (el idioma por defecto) veía claves crudas como `invalid_auth` en el login, en la reautenticación y en el servicio `mysair.stop_installation`.
+- `climate.turn_on` en una zona que solo enfría no hacía nada: elegía siempre calor sin mirar las capacidades de la zona, y el propio guard de la entidad lo rechazaba en silencio. Ahora prefiere calor pero cae al primer modo que la zona admita.
+
+### Changed
+- `PERCENTAGE` pasa a `UnitOfRatio.PERCENTAGE` en el sensor de humedad, desaconsejado como unidad desde HA 2026.7. Mismo valor, sin cambio de comportamiento.
+- CI: nuevo job de validación de HACS, que antes solo cubría `hassfest`.
+
 ## [2.13.0] - 2026-09-12
 
 ### Changed

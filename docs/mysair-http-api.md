@@ -50,8 +50,16 @@
 - **Body:** `{ "refresh_token": "<REDACTED>" }`
 - **Respuesta (200):** `{ "entity": { "access_token": "...", "refresh_token": "..." } }`
 - **Campos consumidos:** `entity.access_token`, `entity.refresh_token` (`api.py:78-79`).
-- **Errores:** `!=200` → excepción; el método **devuelve `False`** en vez de propagar (`api.py:87-89`).
-- **Usado por:** `send_instruction` en el reintento 401.
+- **Errores (Confirmado en producción, 2026-09-11):** el backend es **Laravel Passport**. Cuando el
+  `refresh_token` ya no existe en servidor responde **`404`**, no `401`, con el cuerpo
+  `No query results for model [Laravel\Passport\RefreshToken]`. Un token se invalida al cerrar
+  sesión desde la app oficial, al cambiar la contraseña, o por limpieza de tokens antiguos.
+- **Clasificación de errores (`api._http_error`):** `5xx` y `429` → `MySairConnectionError`
+  (transitorio, reintentar). Cualquier otro no-2xx → `MySairAuthError` (requiere reauth). La regla
+  es por rango a propósito: enumerar códigos concretos fue justo lo que falló, porque nadie
+  esperaba un 404 aquí.
+- **Usado por:** el arranque de la integración (`async_setup_entry`), `_authed_request` en el
+  reintento 401, y `send_instruction`.
 
 ### 1.3 `PUT /user/refreshawscredentials` — **Confirmado**
 - **Finalidad:** obtener credenciales temporales de **AWS IoT** para la conexión MQTT.
