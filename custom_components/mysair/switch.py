@@ -6,6 +6,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .availability import AvailabilityMixin
 from .command_feedback import CommandFeedbackMixin
 from .const import DOMAIN
+from .device import zone_device_info
 from .coordinator import signal_zone_update
 from .status_parser import compute_mode_value
 
@@ -23,15 +24,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
     for inst_ref, device_list in devices.items():
         for dev in device_list:
             dev_id = dev.get("reference") or dev.get("rf") or dev.get("id")
-            name = dev.get("name", f"Zona {dev_id} (Power)")
             zone_name = dev.get("name", f"Zona {dev_id}")
             entities.append(
-                MySairSwitch(hass, api, mqtt_client, inst_ref, dev_id, name)
+                MySairSwitch(hass, api, mqtt_client, inst_ref, dev_id, zone_name)
             )
             entities.append(
-                MySairFloorSwitch(
-                    hass, api, mqtt_client, inst_ref, dev_id, f"{zone_name} Suelo"
-                )
+                MySairFloorSwitch(hass, api, mqtt_client, inst_ref, dev_id, zone_name)
             )
 
     async_add_entities(entities)
@@ -41,6 +39,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
     """Entidad Switch para encender o apagar cada termostato MySair."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:power"
 
     def __init__(self, hass, api, mqtt_client, inst_ref, device_id, name):
@@ -50,7 +49,9 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         self.inst_ref = inst_ref
         self.device_id = device_id
         self._attr_unique_id = f"mysair_switch_{inst_ref}_{device_id}"
-        self._attr_name = name
+        self._attr_name = "Encendido"
+        self._attr_device_info = zone_device_info(inst_ref, device_id, name)
+        self._zone_name = name  # solo para logs
         self._is_on = False
         # Último modo AC conocido para encender preservándolo: "0"=calor, "1"=frío.
         # Por defecto calor (encender NUNCA debe forzar frío). Ver docs/protocol-findings.md.
@@ -58,16 +59,6 @@ class MySairSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         self._unsub = None
         self._init_command_feedback()
         self._init_availability()
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
-            "name": f"{self.device_id.upper()} ({self.inst_ref})",
-            "manufacturer": "MySair",
-            "model": "Zonificador de climatización",
-            "sw_version": "v1.0",
-        }
 
     @property
     def is_on(self):
@@ -154,6 +145,7 @@ class MySairFloorSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
     (`toggleRadiatingFloor`/`setModeHeat`, ver docs/protocol-findings.md §4).
     """
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:heat-wave"
 
     def __init__(self, hass, api, mqtt_client, inst_ref, device_id, name):
@@ -163,7 +155,9 @@ class MySairFloorSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         self.inst_ref = inst_ref
         self.device_id = device_id
         self._attr_unique_id = f"mysair_floor_{inst_ref}_{device_id}"
-        self._attr_name = name
+        self._attr_name = "Suelo radiante"
+        self._attr_device_info = zone_device_info(inst_ref, device_id, name)
+        self._zone_name = name  # solo para logs
         self._is_on = False
         self._allow_floor = False
         # Estado actual conocido para preservarlo al recalcular 'm'.
@@ -173,16 +167,6 @@ class MySairFloorSwitch(CommandFeedbackMixin, AvailabilityMixin, SwitchEntity):
         self._unsub = None
         self._init_command_feedback()
         self._init_availability()
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, f"{self.inst_ref}_{self.device_id}")},
-            "name": f"{self.device_id.upper()} ({self.inst_ref})",
-            "manufacturer": "MySair",
-            "model": "Zonificador de climatización",
-            "sw_version": "v1.0",
-        }
 
     @property
     def is_on(self):

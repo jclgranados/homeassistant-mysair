@@ -70,9 +70,11 @@ def _cleanup_stale_zone_devices(
             _LOGGER.info(
                 f"[MySair] 🧹 Eliminando dispositivo huérfano (zona ya no existe): {zone_ids}"
             )
-            device_registry.async_update_device(
-                device_entry.id, remove_config_entry_id=entry.entry_id
-            )
+            # Desde HA 2026.8 un dispositivo pertenece a una sola config entry,
+            # así que "quitarlo de la entry" dejó de tener sentido y
+            # `async_update_device(remove_config_entry_id=...)` está deprecado
+            # (se elimina en 2027.8). El equivalente ahora es borrarlo.
+            device_registry.async_remove_device(device_entry.id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
