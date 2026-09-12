@@ -33,7 +33,7 @@
 
 ### Firma de URL (Confirmado — `api.py:288-329`)
 - Algoritmo `AWS4-HMAC-SHA256`, método `GET`, ruta `/mqtt`, `SignedHeaders=host`.
-- Usa `datetime.datetime.utcnow()` (**obsoleto** en Python ≥3.12) para `X-Amz-Date`.
+- Usa `datetime.datetime.now(datetime.timezone.utc)` para `X-Amz-Date` (antes `utcnow()`, obsoleto en Python ≥3.12; corregido en C6).
 - La firma tiene validez temporal → si se reutiliza tras caducar, la conexión será rechazada. Ver §6.
 
 ---

@@ -25,7 +25,7 @@ __init__.py (async_setup_entry):
    → MySairMQTTClient.start()  (hilo daemon, WSS a AWS IoT)
    → MySairCoordinator.start()  (coordinator.py, C1: único suscriptor del bus por entry)
    → forward a plataformas: climate, sensor, switch
-   → refresh_status_periodic()  (task, POST status cada 60 s)
+   → refresh_status_periodic()  (task, POST status cada 120 s)
 
 MQTT (mqtt_handler.py) recibe .../status
    → mqtt_message_callback (en __init__.py) parsea t[] → zonas
@@ -42,9 +42,19 @@ Comando de entidad → api.send_zone_command → POST /send/instruction (devuelv
    → hass.bus.async_fire("mysair_feedback", {order_id, ctl, raw})
    → CommandFeedbackMixin (command_feedback.py, climate.py/switch.py) loguea
      confirmación, o aviso si no llega en FEEDBACK_TIMEOUT_SECONDS (5 s)
+
+Sesión inválida (MySairAuthError) → SIEMPRE acaba en el flujo de reauth:
+   · durante el arranque      → ConfigEntryAuthFailed → HA abre el reauth
+   · en caliente (hilo MQTT   → on_auth_failure, o tarea periódica)
+                              → _request_reauth() → call_soon_threadsafe
+                              → entry.async_start_reauth(hass)
+   Nunca se reintenta en silencio: api._http_error clasifica por rango
+   (5xx/429 = conexión, resto = auth). Ver docs/execution-plan.md Tarea 32.
 ```
 
 Detalle completo: `docs/architecture.md`. **Los comandos van por HTTP, el estado por MQTT.**
+
+Las entidades usan `has_entity_name`: el dispositivo (`device.py`) lleva el nombre de la zona y cada entidad solo su parte, porque HA 2026 compone el `entity_id` como área + dispositivo + entidad. **No cambies el `unique_id` de una entidad**: es lo único que mantiene estables los `entity_id` de las instalaciones ya existentes.
 
 ---
 
@@ -170,9 +180,11 @@ Los tests y la documentación están en la raíz del repo.
 5. Recuerda: el frame se recibe en `mqtt_handler._on_message` — parsing frágil por `split`/`{...}`.
 
 ### Modificar la API HTTP
-1. Todos los endpoints están en `api.py`. Añade el método siguiendo el patrón: header `Authorization: Bearer`, `timeout`, comprobación de `status_code`, extracción de `entity`.
-2. Invócalo siempre desde el loop con `async_add_executor_job`.
-3. Documenta el endpoint en `docs/mysair-http-api.md` con su nivel de certeza.
+1. Todos los endpoints están en `api.py`. **Usa `_authed_request` / `_authed_get_entity`** en vez de montar la petición a mano: ya traen header `Authorization: Bearer`, `timeout`, reintento único tras `refresh_tokens()` ante un 401, y clasificación de errores.
+2. **Nunca captures y devuelvas un valor vacío ante un error.** Deja propagar `MySairAuthError`/`MySairConnectionError`: que `get_locations` devolviera `[]` ante cualquier fallo es lo que convirtió una sesión muerta en un bucle de reintentos sin reauth (Tarea 32).
+3. Para clasificar un código HTTP nuevo, usa `_http_error`, que va **por rango** (`5xx`/`429` → conexión, resto → auth). No añadas listas de códigos concretos: enumerarlos fue el modo de fallo original, porque nadie esperaba un 404 del endpoint de refresh.
+4. Invócalo siempre desde el loop con `async_add_executor_job`.
+5. Documenta el endpoint en `docs/mysair-http-api.md` con su nivel de certeza.
 
 ### Trabajar sin un dispositivo real
 - Usa las **fixtures sanitizadas** de `docs/testing-strategy.md` (§5).
@@ -274,6 +286,7 @@ Corregidos en el bloque de estabilización + A5 (rama `stabilization`):
 - ✅ **Limpieza de entidades huérfanas tras un cambio de topología:** `_cleanup_stale_zone_devices` (`__init__.py`) borra el dispositivo (y todas sus entidades) de una zona que ya no aparece en `get_devices()`, comparando contra el `device_registry` en cada setup/reload — antes se quedaban huérfanas para siempre. Ver Tarea 31.
 
 Pendientes:
+- 🟡 **Camino de reauth sin validar contra una cuenta real.** Cubierto por tests con la respuesta literal del incidente (404 de Passport), pero la confirmación end-to-end en producción sigue pendiente.
 - 🟡 **Mensajes duplicados/fuera de orden** — sin cobertura todavía (menor, ver `docs/testing-strategy.md` §P3; los duplicados de `feedback` vistos en producción encajan aquí).
 - 🟡 **Campos de zona sin interpretar** (`vf`, `hmh`, `mh`, `p`, `ps`): búsqueda exhaustiva en el bundle JS sin encontrar referencias — quedan sin interpretar por la regla de no inventar campos (ver `docs/known-unknowns.md`). (`sv` se resolvió el 2026-07-21: es el estado de suelo radiante encendido/apagado, `setFloor` en el bundle — un intento de búsqueda anterior no lo había encontrado, no es que el campo no exista.)
 

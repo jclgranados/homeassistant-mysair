@@ -2,9 +2,9 @@
 
 > Documento originalmente escrito como propuesta antes de implementar nada; se
 > mantiene en presente/futuro como registro del razonamiento, con notas "✅
-> Implementado" donde ya existe. Estado actual real (2026-07-21): **229 tests**
-> (157 P0/P1 sin HA + 72 P2 con harness de HA vía Docker). Ver
-> `docs/execution-plan.md` (28 tareas) para el detalle completo de cada tanda;
+> Implementado" donde ya existe. Estado actual real (2026-09-12): **253 tests**
+> (173 P0/P1 sin HA + 80 P2 con harness de HA vía Docker). Ver
+> `docs/execution-plan.md` para el detalle completo de cada tanda;
 > las referencias puntuales de más abajo solo cubren las tareas que crearon
 > la cobertura original (5, 12, 13) y no se han mantenido actualizadas tarea
 > a tarea desde entonces — para "qué se implementó cuándo" usar
@@ -25,19 +25,26 @@ pytest
 ```bash
 docker compose run --rm test-ha
 ```
-Requiere Docker. La imagen (`Dockerfile.test`) instala Python 3.12 +
+Requiere Docker. La imagen (`Dockerfile.test`) instala Python 3.14 +
 `pytest-homeassistant-custom-component` (`requirements-test-ha.txt`) en un
 contenedor aislado; el código se monta como volumen, así que no hay que
-reconstruir la imagen al editar tests o código.
+reconstruir la imagen al editar tests o código (sí al cambiar el pin de
+dependencias: `docker compose build test-ha`).
 
-> ⚠️ **Techo de versión conocido:** PyPI no publica `homeassistant` más allá de
-> `2025.1.4` (más antiguo que el `2025.10.0` mínimo documentado en el README —
-> `hassfest` no permite declarar la clave `homeassistant` en el
-> `manifest.json`); `pytest-homeassistant-custom-component` fija esa versión
-> internamente. Las APIs que usamos (`ConfigEntryAuthFailed`,
-> `_get_reauth_entry`, `async_update_reload_and_abort`, `async_set_unique_id`)
-> ya existían en 2025.1.4, así que los tests siguen siendo válidos, pero no
-> validan contra la versión mínima exacta que declaramos soportar.
+> ⚠️ **Mantener el pin al día.** El harness prueba contra la versión de
+> `homeassistant` que fija `pytest-homeassistant-custom-component`
+> (`requirements-test-ha.txt`), y esa versión marca también la de Python
+> (HA 2026.9 exige ≥ 3.14.2). Hoy: **HA 2026.9**, alineado con el mínimo
+> declarado en `hacs.json` (2026.8.0).
+>
+> **Corrección de una nota anterior de este documento:** durante mucho tiempo
+> se afirmó aquí que PyPI no publicaba `homeassistant` más allá de `2025.1.4`
+> y que ese era un techo del ecosistema. Era falso, o dejó de ser cierto sin
+> que nadie lo revisara. El pin se quedó congelado 20 versiones por detrás de
+> lo que corría en producción, y al actualizarlo (2026-09-12) aparecieron de
+> golpe una deprecación del device registry y un cambio en la composición de
+> los `entity_id` que llevaban meses sin detectarse. **Un harness desfasado no
+> falla: calla.**
 
 Ambos conjuntos conviven en el mismo directorio `tests/`: los ficheros P2
 (`test_config_flow.py`, `test_init_setup_unload.py`, `test_ha_harness_smoke.py`)
