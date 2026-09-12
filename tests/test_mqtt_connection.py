@@ -26,7 +26,7 @@ from mqtt_handler import (
     MySairMQTTClient,
     _next_packet_length,
 )
-from api import MySairAPI
+from api import MySairAPI, MySairConnectionError
 
 
 # --- build_client_id (#20) ---
@@ -672,3 +672,63 @@ def test_recv_buffer_resets_on_malformed_varint():
 
     assert client._recv_buffer == b""
     assert received == []
+
+
+# --- Reauth en caliente: la sesión muere con la integración ya arrancada ---
+
+
+def _client_with_auth_callback(refresh_side_effect):
+    """Cliente cuyo refresh_aws_credentials falla como se le indique."""
+    api = MySairAPI("e", "p")
+    api.aws_credentials = None  # fuerza el refresco en la primera vuelta
+
+    def _boom():
+        raise refresh_side_effect
+
+    api.refresh_aws_credentials = _boom
+
+    reauth_calls = []
+    client = MySairMQTTClient(
+        api=api,
+        installation_refs=[],
+        message_callback=lambda data: None,
+        on_auth_failure=lambda: reauth_calls.append(1),
+    )
+    return client, reauth_calls
+
+
+def _run_once(client, monkeypatch):
+    """Ejecuta una sola vuelta de _run() (para de inmediato tras el fallo)."""
+    monkeypatch.setattr(mqtt_handler.time, "sleep", lambda _d: client.stop_event.set())
+    client._run()
+
+
+def test_auth_error_requests_reauth(monkeypatch):
+    client, reauth_calls = _client_with_auth_callback(MySairAPI.AuthError("revoked"))
+    _run_once(client, monkeypatch)
+    assert reauth_calls == [1]
+
+
+def test_connection_error_does_not_request_reauth(monkeypatch):
+    # Un backend caído no debe molestar al usuario con un formulario de login.
+    client, reauth_calls = _client_with_auth_callback(
+        MySairConnectionError("backend caído")
+    )
+    _run_once(client, monkeypatch)
+    assert reauth_calls == []
+
+
+def test_auth_failure_reported_only_once(monkeypatch):
+    client, reauth_calls = _client_with_auth_callback(MySairAPI.AuthError("revoked"))
+    calls = {"n": 0}
+
+    def _sleep(_d):
+        calls["n"] += 1
+        if calls["n"] >= 3:
+            client.stop_event.set()
+
+    monkeypatch.setattr(mqtt_handler.time, "sleep", _sleep)
+    client._run()
+
+    assert calls["n"] == 3  # el hilo sigue reintentando en degradado
+    assert reauth_calls == [1]  # pero solo avisa una vez

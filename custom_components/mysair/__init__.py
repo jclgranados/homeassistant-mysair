@@ -116,34 +116,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
 
     # --- ESTRUCTURA: Locations → Installations → Devices ---
-    locations = await hass.async_add_executor_job(api.get_locations)
-    if not locations:
-        raise ConfigEntryNotReady("No se encontraron ubicaciones en la cuenta MySair.")
+    # Los métodos de descubrimiento propagan MySairAuthError/MySairConnectionError
+    # (antes devolvían [] ante cualquier fallo, lo que convertía una sesión
+    # muerta en "cuenta vacía" → ConfigEntryNotReady → bucle de reintentos sin
+    # reauth). Una lista vacía aquí ya solo significa cuenta sin datos.
+    try:
+        locations = await hass.async_add_executor_job(api.get_locations)
+        if not locations:
+            raise ConfigEntryNotReady(
+                "No se encontraron ubicaciones en la cuenta MySair."
+            )
 
-    first_loc = locations[0]
-    location_id = first_loc["id"]
-    installations = await hass.async_add_executor_job(
-        api.get_installations, location_id
-    )
-    if not installations:
-        raise ConfigEntryNotReady(
-            "No se encontraron instalaciones en la ubicación MySair."
+        first_loc = locations[0]
+        location_id = first_loc["id"]
+        installations = await hass.async_add_executor_job(
+            api.get_installations, location_id
         )
+        if not installations:
+            raise ConfigEntryNotReady(
+                "No se encontraron instalaciones en la ubicación MySair."
+            )
 
-    _LOGGER.info(
-        f"[MySair] 🏠 Instalaciones detectadas: {[i['reference'] for i in installations]}"
-    )
-
-    all_devices = {}
-    installation_refs = []
-    for inst in installations:
-        ref = inst["reference"]
-        installation_refs.append(ref)
-        devices = await hass.async_add_executor_job(api.get_devices, ref)
-        all_devices[ref] = devices
         _LOGGER.info(
-            f"[MySair] 📟 Instalación {ref}: {len(devices)} termostatos encontrados"
+            f"[MySair] 🏠 Instalaciones detectadas: {[i['reference'] for i in installations]}"
         )
+
+        all_devices = {}
+        installation_refs = []
+        for inst in installations:
+            ref = inst["reference"]
+            installation_refs.append(ref)
+            devices = await hass.async_add_executor_job(api.get_devices, ref)
+            all_devices[ref] = devices
+            _LOGGER.info(
+                f"[MySair] 📟 Instalación {ref}: {len(devices)} termostatos encontrados"
+            )
+    except MySairAuthError as err:
+        raise ConfigEntryAuthFailed(
+            f"Sesión MySair inválida durante el descubrimiento: {err}"
+        ) from err
+    except MySairConnectionError as err:
+        raise ConfigEntryNotReady(f"No se pudo conectar con MySair: {err}") from err
 
     _cleanup_stale_zone_devices(hass, entry, all_devices)
 
@@ -213,8 +226,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         except Exception as e:
             _LOGGER.error(f"[MySair MQTT] ❌ Error en callback: {e}")
 
+    # --- REAUTH EN CALIENTE ---
+    # La sesión puede morir con la integración ya arrancada (MySair invalida el
+    # refresh_token en servidor: cierre de sesión desde la app oficial, cambio
+    # de contraseña, limpieza de tokens antiguos). Sin esto nadie se enteraba
+    # hasta el siguiente reinicio de HA, porque tanto el hilo MQTT como la
+    # tarea periódica reintentan en silencio para siempre.
+    def _request_reauth():
+        """Pide a HA que abra el flujo de reauth (desde cualquier hilo).
+
+        ``async_start_reauth`` ya deduplica si hay un flujo de reauth o de
+        reconfiguración abierto, así que no hace falta control propio.
+        """
+        hass.loop.call_soon_threadsafe(entry.async_start_reauth, hass)
+
     # --- CLIENTE MQTT ---
-    mqtt_client = MySairMQTTClient(api, installation_refs, mqtt_message_callback)
+    mqtt_client = MySairMQTTClient(
+        api,
+        installation_refs,
+        mqtt_message_callback,
+        on_auth_failure=_request_reauth,
+    )
     hass.data[DOMAIN][entry.entry_id]["mqtt"] = mqtt_client
 
     # Lanzar el hilo MQTT sin bloquear el loop
@@ -249,6 +281,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
                     _LOGGER.debug(
                         f"[MySair] 🔁 Solicitud de estado enviada a instalación {ref}"
                     )
+            except MySairAuthError as e:
+                _LOGGER.error(
+                    f"[MySair] 🔑 Sesión inválida, se requiere reautenticación: {e}"
+                )
+                _request_reauth()
             except Exception as e:
                 _LOGGER.warning(
                     f"[MySair] ⚠️ Error al enviar instrucción de estado: {e}"

@@ -6,6 +6,17 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y e
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-09-12
+
+### Fixed
+- **Una sesión caducada ya no obliga a desinstalar la integración.** MySair corre sobre Laravel Passport, que responde `404` (no `401`) cuando el `refresh_token` ya no existe en servidor, con el cuerpo `No query results for model [Laravel\Passport\RefreshToken]`. Ese 404 se clasificaba como error de conexión, se convertía en `ConfigEntryNotReady` y Home Assistant reintentaba el arranque en bucle (`setup_retry`) sin ofrecer nunca el botón de reautenticar. Ahora la clasificación es por rango: `5xx` y `429` son fallos transitorios (reintentar), y cualquier otro código no-2xx en un endpoint de sesión pide reautenticación.
+- `get_locations()`, `get_installations()` y `get_devices()` dejan de devolver `[]` ante cualquier error. Una sesión muerta se leía como "cuenta vacía" y acababa también en un bucle de reintentos; una lista vacía ya solo significa que la cuenta no tiene datos.
+- `refresh_aws_credentials()` reintenta una vez tras renovar la sesión ante un `401`, como ya hacía `send_instruction()`. Antes dependía de que la tarea periódica refrescara el token por su cuenta.
+
+### Added
+- **Reautenticación en caliente.** Si la sesión muere con la integración ya arrancada (cierre de sesión desde la app oficial, cambio de contraseña, limpieza de tokens en servidor), el hilo MQTT y la tarea periódica de estado piden el flujo de reauth al momento en vez de reintentar en silencio hasta el siguiente reinicio de Home Assistant. El hilo MQTT sigue reintentando en degradado y avisa una sola vez; al reconectar con éxito rearma el aviso.
+- El flujo de reauth comprueba que la cuenta no cambia (`account_mismatch`), con su cadena traducida al inglés y al español.
+
 ## [2.11.2] - 2026-07-21
 
 ### Added
