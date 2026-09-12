@@ -2,6 +2,17 @@
 
 > Cada observación se clasifica como: ✅ **Correcto** · 🟡 **Mejorable** · 🟠 **Potencialmente obsoleto** · 🔴 **Posible bug** · 🔎 **Requiere investigación**.
 
+> ⚠️ **Este documento es la auditoría inicial del proyecto**, escrita antes de
+> corregir nada. Los 🔴/🟠 de abajo describen el estado de partida, no el
+> actual: prácticamente todos están resueltos (unload, requirements,
+> `should_poll`, `FlowResult`, `datetime.utcnow()`). Para el estado real de
+> cada uno, ver `CLAUDE.md` §11 y `docs/execution-plan.md`. Se conserva tal
+> cual como registro del análisis.
+>
+> Puesto al día el 2026-09-12 contra **Home Assistant 2026.9**: mínimo
+> declarado `2026.8.0`, entidades con `has_entity_name`, y el device registry
+> usando `async_remove_device`.
+
 ---
 
 ## 1. Manifest y metadatos
@@ -17,7 +28,7 @@
 | `dependencies` | `[]` | ✅ |
 | `requirements` | `aiohttp`, `paho-mqtt`, `requests`, `boto3`, `websocket-client` | 🔴 `aiohttp`, `paho-mqtt`, `boto3` **no se usan**; solo `requests` y `websocket-client` |
 | `quality_scale` | `silver` | 🔴 no cumple silver (sin tests, sin translations, unload roto) |
-| `homeassistant` | `2025.10.0` | 🟡 clave `homeassistant` mínima válida, pero ver §11 |
+| `homeassistant` | `2025.10.0` → hoy **`2026.8.0`** en `hacs.json` | 🟡 `hassfest` no admite esta clave en el `manifest.json` de una integración custom; vive en `hacs.json` y en el README |
 | `version` | `1.0.0` | ✅ (requerido para custom) |
 
 **Recomendación:** dejar en `requirements` solo `requests` y `websocket-client==1.8.0`; bajar `quality_scale` o retirarlo hasta cumplirlo.

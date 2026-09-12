@@ -55,20 +55,28 @@ Nota (fase de estabilización): la integración se movió a `custom_components/m
 |---|---|---|---|
 | `async_setup_entry` | `__init__.py:17` | Orquesta login → descubrimiento → MQTT → plataformas → refresco | event loop + executor |
 | `mqtt_message_callback` | `__init__.py:67` | Parsea `status`, normaliza zonas, dispara evento `mysair_update` | hilo MQTT → `call_soon_threadsafe` |
-| `refresh_status_periodic` | `__init__.py:151` | Cada 60 s pide `status`/`sync` a cada instalación por HTTP | event loop task |
-| `MySairAPI` | `api.py:12` | Login, refresh tokens, credenciales AWS, descubrimiento, instrucciones, firma SigV4 | executor (bloqueante) |
-| `MySairMQTTClient` | `mqtt_handler.py:69` | Conexión WSS, CONNECT/SUBSCRIBE manuales, reconexión | hilo daemon propio |
+| `refresh_status_periodic` | `__init__.py` | Cada 120 s pide `status` a cada instalación por HTTP (respaldo por si se pierde un mensaje MQTT). Ante `MySairAuthError` pide reauth en vez de reintentar en silencio | event loop task |
+| `_request_reauth` | `__init__.py` | Puente hilo→loop (`call_soon_threadsafe` → `entry.async_start_reauth`) para pedir reautenticación cuando la sesión muere **con la integración ya arrancada**. Lo invocan el hilo MQTT y la tarea periódica | cualquier hilo → event loop |
+| `MySairAPI` | `api.py` | Login, refresh tokens, credenciales AWS, descubrimiento, instrucciones, firma SigV4. `_http_error` clasifica cada respuesta no-2xx como fallo de sesión o de conexión; `_authed_request` añade cabecera, timeout y reintento único tras renovar la sesión ante un 401 | executor (bloqueante) |
+| `MySairMQTTClient` | `mqtt_handler.py` | Conexión WSS, CONNECT/SUBSCRIBE manuales, reconexión con backoff. Ante un fallo de sesión invoca `on_auth_failure` una sola vez y sigue reintentando en degradado | hilo daemon propio |
 | `MySairCoordinator` | `coordinator.py` | Escucha `mysair_update` **una sola vez** por config entry, filtra por instalación propia y redistribuye cada zona por separado vía `homeassistant.helpers.dispatcher` (C1) | event loop |
+| `zone_device_info` | `device.py` | Dispositivo compartido por las 7 entidades de una zona. Su nombre **es** el de la zona, porque con `has_entity_name` Home Assistant lo antepone al de cada entidad para componer nombre visible y `entity_id` | event loop |
 | Entidades | `climate/sensor/switch.py` | Se suscriben a la señal de dispatcher de su propia zona (`coordinator.signal_zone_update`), ya sin filtrar `ctl`/`zone_id`; actualizan estado | event loop |
 
 ### Dependencias entre módulos (Confirmado)
 
 ```
 config_flow.py ─► api.py (login)
-__init__.py ─► api.py, mqtt_handler.py, const.py
-mqtt_handler.py ─► api.py (aws_credentials, aws_sign_url)
-climate/sensor/switch.py ─► const.py (DOMAIN)  y  hass.data[DOMAIN][entry_id]["api"]
+__init__.py ─► api.py, mqtt_handler.py, coordinator.py, const.py
+mqtt_handler.py ─► (nada del paquete: recibe la instancia de api por parámetro)
+climate/sensor/switch.py ─► const.py (DOMAIN), device.py, coordinator.py
+                            y hass.data[DOMAIN][entry_id]["api"]
 ```
+
+`mqtt_handler.py` y `api.py` **no** tienen imports relativos a propósito: los tests
+P0/P1 los importan como módulos de nivel superior, sin ejecutar el `__init__.py`
+del paquete (que depende de `homeassistant`). Por eso `mqtt_handler` distingue un
+fallo de sesión vía `self.api.AuthError` en lugar de importar la excepción.
 
 Las entidades **no** conocen `MySairMQTTClient` directamente: se comunican con él a través del **event bus** de HA (`mysair_update`), pero ya no escuchan ese evento cada una por su cuenta — `MySairCoordinator` (C1) es el único suscriptor del bus por config entry, y redistribuye cada zona por separado a la entidad correspondiente vía `homeassistant.helpers.dispatcher`. Acoplamiento por evento + dispatcher. **Confirmado**.
 
